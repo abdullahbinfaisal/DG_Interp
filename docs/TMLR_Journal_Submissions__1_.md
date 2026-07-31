@@ -4,9 +4,7 @@
 
 ## Abstract
 
-[TODO: Revise abstract in end] Domain generalization methods are often motivated by the search for invariant representations, but activation invariance alone does not reveal whether a feature is useful for classification. We propose sparse concept diagnostics, a post-hoc framework for analyzing trained domain-generalization models by decomposing internal vision representations into sparse autoencoder candidate concepts. For each concept, we compute class-conditional scores measuring activation invariance across domains, ablation-based discriminative effect on the ground-truth class, and cross-domain consistency of that effect. These scores separate robust class-supporting concepts from invariant distractors, domain- contingent cues, and class-conflicting concepts. On PACS models, our analysis shows that domain-generalization failures are not explained simply by an absence of invariant activations; rather, failures arise when invariant concepts are not consistently class-supporting or when concepts support one class while interfering with another. Aggregating these categories yields class-level and model-level diagnostic profiles, while oracle concept interventions validate that the identified categories correspond to functional prediction behavior. Our results suggest that domain-generalization representations should be evaluated not only by whether concepts
-
-are invariant, but by whether they are discriminatively aligned and class-isolated.
+Domain generalization methods are often motivated by the search for invariant representations, but activation invariance alone does not reveal whether a feature is useful for classification. We propose sparse concept diagnostics, a post-hoc framework for analyzing trained domain-generalization models by decomposing internal vision representations into sparse autoencoder candidate concepts. For each class–concept pair we compute three scores on source domains only: activation invariance across domains, ablation-based discriminative effect on the ground-truth class, and cross-domain consistency of that effect. Applied to a frozen ERM ResNet-50 on PACS, the framework shows that conditioning on invariance nearly halves the chance that a concept is harmful yet leaves the chance that it is useful unchanged, and that 83.5% of invariant class–concept pairs have no measurable discriminative effect. The concepts that damage held-out accuracy most are those an activation-alignment criterion scores best: 35 pairs that are both invariant and consistent in their harm, 0.03% of the class–concept grid, account for a quarter of all target-domain errors. We further find that 78% of harmful pairs involve a concept that supports a different class, so harmful concepts are largely not spurious features but genuine features attached to the wrong class, and that retaining 0.07% of the grid raises held-out accuracy above that of the unablated model — indicating that the failure is partly one of selectivity rather than of representational capacity. Interventions are validated against size- and magnitude-matched random controls, which move accuracy in the opposite direction. Our results suggest that domain-generalization representations should be evaluated not only by whether concepts are invariant, but by whether they are discriminatively aligned and class-isolated.
 
 ## 1 Introduction
 
@@ -85,7 +83,7 @@ The classifier head maps the feature representation to logits over classes. Thro
 
 In our main experiments, is the set of PACS domains,
 
-and = 7 for the PACS object classes (Li et al., 2017). The primary model is an ERM-trained ResNet backbone (He et al., 2016; Vapnik, 1999). [TODO: Additional models or checkpoints are included only when the corresponding SAE diagnostics are complete.] [URL 🔗](#page-0)
+and = 7 for the PACS object classes (Li et al., 2017). The primary model is an ERM-trained ResNet backbone (He et al., 2016; Vapnik, 1999). [URL 🔗](#page-0)
 
 a set of class labels. For each image xi, let yi
 
@@ -198,9 +196,7 @@ The magnitude-consistency score is
 
 High R(k, c) means that the magnitude of the concept’s discriminative effect is spread across domains. Low R(k, c) means that the effect is concentrated in a small number of domains.
 
-Because entropy is scale-insensitive, R is interpreted only for concepts satisfying |D(k, c)| > τD. A concept with tiny effects in every domain can have high entropy while still being unimportant. We treat such concepts as neutral rather than robust. Optionally, we also compute a sign-consistency score,
-
-which is high when domain-wise effects share the same sign and low when positive and negative effects cancel across domains. Unless otherwise stated, R refers to the magnitude-consistency score in Eq. 27, and concepts near D = 0 are excluded before typology construction. [URL 🔗](#page-0)
+Because entropy is scale-insensitive, R is interpreted only for concepts satisfying |D(k, c)| > τD. A concept with tiny effects in every domain can have high entropy while still being unimportant. We treat such concepts as neutral rather than robust. The framework uses exactly these three scores; R always refers to the magnitude-consistency score in Eq. 27, and concepts near D = 0 are excluded before typology construction. Note that R does not distinguish an effect confined to one domain from an effect whose sign varies across domains, since it is computed over magnitudes; the latter case is rare in our data, affecting 0.33% of pairs. [URL 🔗](#page-0)
 
 ## 3.7 Concept typology
 
@@ -235,7 +231,7 @@ as a diagnostic profile, not as a validated model-selection criterion.
 
 ## 4.1 Dataset and model
 
-The main experiments use PACS (Li et al., 2017), which contains four visual domains: art painting, cartoon, photo, and sketch. The task contains seven object classes. We designate the sketch domain as the target holdout, utilizing the remaining three as source domains. Unless otherwise stated, models are trained with the DomainBed protocol (Gulrajani & Lopez-Paz, 2021), employing non-oracle checkpoint selection based on the highest average accuracy across all source domains. The primary analysis uses an ERM-trained ResNet-50 model. We focus on the cleanest completed setting rather than claiming broad benchmark coverage. Additional DG algorithms, backbones, or datasets may be included in Appendix ?? if their diagnostics are fully completed. [URL 🔗](#page-0)
+The main experiments use PACS (Li et al., 2017), which contains four visual domains: art painting, cartoon, photo, and sketch. The task contains seven object classes. We designate the sketch domain as the target holdout, utilizing the remaining three as source domains. Unless otherwise stated, models are trained with the DomainBed protocol (Gulrajani & Lopez-Paz, 2021), employing non-oracle checkpoint selection based on the highest average accuracy across all source domains. The primary analysis uses an ERM-trained ResNet-50 model at a single checkpoint, selected without reference to the target domain. We focus on one cleanly controlled setting rather than claiming broad benchmark coverage; Section 7 states the resulting limits on external validity. [URL 🔗](#page-0)
 
 ## 4.2 SAE training
 
@@ -243,37 +239,51 @@ The SAE is trained to reconstruct the feature maps from the final layer before t
 
 To verify training convergence and ensure that higher dimensional interventions map reliably back to the original feature space, we evaluate the classifier on SAE-reconstructed features. The goal is to confirm that these reconstructions induce minimal deviation from the original model behavior.
 
-Unless otherwise stated, the SAE is trained on source-domain features only. The diagnostic scores H,D, R and thresholds are also estimated on source-domain data. Target-domain examples are used only for post-hoc evaluation of whether source-estimated concept categories explain held-out behavior.
+Unless otherwise stated, the SAE is trained on source-domain features only. The diagnostic scores H, D, R and thresholds are also estimated on source-domain data. Target-domain examples are used only for post-hoc evaluation of whether source-estimated concept categories explain held-out behavior. One qualification is worth stating precisely: the two scalar statistics used to normalize feature maps before the SAE encoder were estimated from a single batch spanning all four domains rather than the three source domains. This concerns a mean and a standard deviation only, and no dictionary element, score or threshold is estimated with target-domain data.
 
 
-*Table 2: Overall SAE reconstruction fidelity on PACS for ERM ResNet-50.*
+*Table 2: SAE reconstruction fidelity on PACS for ERM ResNet-50, checkpoint 3300. Micro-averaged accuracy is image-weighted, macro-averaged is class-weighted; the two diverge on sketch because that domain is heavily class-imbalanced. Sketch is the held-out target domain. Evaluation covers every image of each domain.*
 
-| Domain |   |   | Original Acc. SAE Recon. Acc. Drop |
-| --- | --- | --- | --- |
-| Art painting | 99.31 | 99.31 | 0.00 |
-| Cartoon | 99.03 | 98.98 | 0.05 |
-| Photo | 99.77 | 99.77 | 0.00 |
-| Sketch | 80.29 | 80.20 | 0.10 |
+| Domain | Original micro | Recon. micro | Δ micro | Original macro | Recon. macro |
+| --- | --- | --- | --- | --- | --- |
+| Art painting | 99.37 | 99.32 | 0.05 | 99.38 | 99.35 |
+| Cartoon | 99.19 | 99.15 | 0.04 | 99.23 | 99.19 |
+| Photo | 99.82 | 99.82 | 0.00 | 99.78 | 99.78 |
+| Sketch (target) | 80.25 | 80.22 | 0.03 | 83.56 | 83.63 |
 
-## 4.3 Thresholds and sensitivity
+## 4.3 Evaluation protocol
 
-The main typology uses thresholds τH, τR, and τD. We use τH = [TODO: 0.8 or final value] and τR = [TODO: 0.8 or final value] in the main analysis. The threshold τD is selected as [TODO: 1e-3 or value]. The appendix reports threshold sensitivity for τH {0.7, 0.8, 0.9}, τR {0.7, 0.8, 0.9}, and multiple choices of τD including clustering based approaches and fixed magnitude thresholding.
+Scores and accuracies are computed over every image in each domain, with no train/test subsampling, no shuffling and no dropped final batch, so all reported figures are exactly reproducible. Accuracy is reported both micro-averaged and macro-averaged over classes throughout, and source and target domains are never pooled into a single average, since three of the four domains are in distribution and pooling would obscure the only number that carries the argument.
+
+When computing statistics over class–concept pairs we restrict attention to pairs active on at least 30 images of the class in question. This support floor is an inclusion criterion for estimation only: R is an entropy over three per-domain effect estimates, and a cell supported by a handful of images yields a meaningless Dd. It is never used to mask pairs during a forward pass. Applying such a filter class-conditionally would leak label information, since a concept that fires rarely for class k but often for class k′ is a confusion signal, and suppressing it on k-labeled images deletes evidence for the competing class using the ground-truth label.
+
+## 4.4 Thresholds and sensitivity
+
+The main typology uses thresholds τH, τR, and τD. We set τH = τR = 0.7 and τD = 10−4. The choice of 0.7 is not arbitrary: with three source domains, log 2/ log 3 = 0.63, so a threshold of 0.7 is the largest value at which clearing the threshold guarantees nonzero activation, or nonzero effect, in all three source domains. Higher thresholds lose that guarantee and also reduce the central harmful invariant category to six pairs, too few to support a claim. We report sensitivity for τH and τR in {0.7, 0.8, 0.9} in Section 5.3, where the qualitative conclusion strengthens monotonically with the threshold.
 
 ## 5 Results
 
+Throughout this section we report micro-averaged (image-weighted) and macro-averaged (class-weighted) accuracy separately. The two differ materially on the target domain, where PACS sketch is heavily imbalanced: 772 dog images against 80 house images, and dog is simultaneously the largest and the weakest class. Reporting a single unqualified accuracy for sketch would conceal a discrepancy of more than three percentage points. All diagnostic scores are estimated on the three source domains only; sketch is used exclusively to evaluate whether source-estimated categories explain held-out behavior.
+
 ## 5.1 SAE reconstructions preserve classifier behavior
 
-Before utilizing SAE latents for analysis, we verify that SAE reconstructions preserve the classifier’s behavior. Table 2 reports domain-level reconstruction fidelity. Across PACS domains, SAE-reconstructed features closely match the original ERM features: the drops are 0.00 percentage points for art painting and photo, 0.05 percentage points for cartoon, and 0.10 percentage points for sketch. Thus, even on the weakest domain, sketch, reconstruction changes overall accuracy by less than 0.1 percentage points. [URL 🔗](#page-0)
+Before using SAE latents for analysis we verify that the reconstruction preserves the classifier's behavior, since a poor reconstruction would render every downstream ablation an artifact of the autoencoder rather than a perturbation of the model. Table 2 reports accuracy for the original model and for the same classifier applied to SAE-reconstructed features, evaluated on every image of each domain.
+
+Reconstruction changes accuracy by at most 0.05 percentage points on any domain, including the weakest. Concept ablations reported below are therefore interpretable as perturbations of the model's own representation, subject to the caveat of Section 3.2 that they are ablations in reconstruction space rather than causal interventions in the original network.
 
 ## 5.2 Activation-invariant concepts are not necessarily useful
 
 Many domain generalization algorithms rest on a common premise: an attribute that persists across the source domains is likely to be causal and to persist on unseen target domains, whereas an attribute confined to a few domains is likely a spurious correlation Arjovsky et al. (2019). Under this view, suppressing domain-specific features improves out-of-distribution generalization by forcing the model to rely on the causal, invariant ones. [URL 🔗](#page-0)
 
-We find this premise necessary but not sufficient. Activation invariance, the degree to which a concept fires uniformly across domains, captured by H(k, c), does not by itself make a concept useful. Each concept additionally carries a discriminative strength D(k, c), the signed effect of its activation on the model’s confidence in the true class. If invariance alone were sufficient, high-H concepts would concentrate at positive D. Instead, the high-H region contains positive, neutral, and negative discriminative effects (Figure 1). [URL 🔗](#page-0)
+We find this premise necessary but far from sufficient. Activation invariance H(k, c) measures whether a concept fires uniformly across domains. Discriminative effect D(k, c) measures the signed change in the model's confidence in the true class when the concept is ablated. If invariance alone were sufficient, high-H concepts would concentrate at positive D. Instead the high-H region spans positive, near-zero and negative D (Figure 1).
 
-These three regimes have distinct interpretations. A neutral concept (D 0) activates across all domains yet does not separate classes. For instance a legs concept (Fig. 2 fires on elephants, dogs, and horses alike and therefore contributes nothing to discriminating among them. Concept (D < 0) is domain invariant yet actively harmful. We observe a dog-chest concept (Fig. 3, that also activates on horses across every domain, owing to their visually similar chests, and consistently pushes the model to incorrectly classify horses as dogs. Its activation invariance is high, but its discriminative power is negative for horses. A positive concept (D > 0) is the canonical case of a feature that supports the correct class, for instance the dog-chest activated on an image of a dog. [URL 🔗](#page-0)
+The three regimes have distinct interpretations, and each is visually identifiable. A neutral concept (D ≈ 0) activates across all domains yet does not separate classes. The clearest instance is a body-plan concept responding to the four-legged animal silhouette (Figure 3): legs and torso are legs and torso whether painted, drawn or photographed, so H is near one, but the concept fires on dogs, horses and elephants alike and therefore contributes nothing to discriminating among them. Ablating it changes the class posterior negligibly for any of them. Stability is not usefulness.
 
-In fact, among high-H concepts, on average 7.2% are positive-D, 85.6% are neutral, and 7.2% are negative-D across all seven classes. This shows that activation invariance alone does not identify robust class evidence, the vast majority of highly active concepts carry no discriminative signal.
+A negative-D concept is domain-invariant yet actively harmful. We observe a chest-and-forelimb concept (Figure 2) that fires on the front quarters of four-legged mammals in every domain. On dogs it is genuine evidence and its ablation lowers confidence in dog, so D(dog, c) > 0. On horses the same region fires — the underlying shape is similar, particularly in the flatter, lower-texture renderings of cartoons and paintings — but the model reads the pattern as dog-evidence, so it displaces probability away from horse and D(horse, c) < 0. Nothing about the detector is defective: it detects what it detects, reliably, in every domain. The defect lies in the mapping from that detector to a class decision. A positive-D concept is the canonical case that invariance-based reasoning implicitly assumes, for instance the same chest concept evaluated on dog.
+
+This example also motivates class-conditionality directly. A single global score for the chest concept would average a positive effect on dog against a negative effect on horse and report approximately zero, filing a genuine failure mechanism into the neutral majority. Only the class-conditional formulation exposes it.
+
+Quantitatively, of the 1542 class–concept pairs that clear the support floor, 1269 (82.3%) are discriminatively neutral, 135 (8.8%) support the correct class and 138 (8.9%) hurt it. Restricting to the invariant population barely changes this: among the 1173 pairs with H ≥ 0.7, 83.5% are neutral, 9.0% supportive and 7.6% harmful. Conditioning on invariance moves the probability that a concept is harmful from 13.3% among low-H pairs to 7.6% among high-H pairs, so invariance does nearly halve the incidence of harm. But it moves the probability that a concept is supportive from 8.1% to 9.0%, which is no change at all. Activation invariance is weakly informative about the absence of harm and uninformative about the presence of usefulness, and five-sixths of what an alignment objective would stabilize does not separate classes at all.
 
 
 *Figure 1: Activation invariance does not imply discriminative usefulness. Each point is a class-concept pair (k, c), plotting activation invariance H(k, c) against discriminative strength D(k, c). High-H concepts span positive, near-zero, and negative D, contradicting the assumption that cross-domain invariance alone yields useful features.*
@@ -282,117 +292,142 @@ In fact, among high-H concepts, on average 7.2% are positive-D, 85.6% are neutra
 
 A concept can fire evenly across all domains and still only matter in one of them. Activation invariance H cannot detect this, because it only looks at where a concept appears. The consistency score R looks at where a concept’s discriminative effect appears, and these turn out to be different things.
 
-The two scores are not independent. Both are entropies over the three source domains, so a pair that clears τR = 0.7 must have nonzero effect in every source domain. An even split across only two domains gives log 2/ log 3 = 0.63, which falls below the threshold. The same bound applies to H. High consistency therefore implies broad activation, and the data confirms this: only 3 of the 217 pairs with non-negligible effect are low-H but high-R (Fig. 5). R acts as a filter applied inside the invariant population, not as a rival measure of invariance. But it is a filter that removes a lot. Of the 1068 high-H pairs, only 46.4% also clear τR. Knowing that a concept is activation-invariant tells us almost nothing about whether its effect is consistent. [URL 🔗](#page-0)
+A concrete case separates the two. Consider a concept responding to outline and line weight. Such a concept fires on essentially every image, since photographs contain edges as readily as drawings, so H is high. Yet its discriminative influence may be concentrated almost entirely in cartoons, where outline is the dominant class cue, and be negligible in photographs, where texture and color carry the decision. Activation invariance sees a textbook invariant concept. Consistency sees a cartoon specialist. The distinction is between where a concept *fires* and where it *matters*.
 
-The pattern becomes clearer when we split the invariant pairs by the sign of D. Among invariant concepts that support the correct class, 72.5% (74/102) are also consistent. Among invariant concepts that hurt the correct class, only 29.7% (19/64) are. In short, invariant support is usually spread across domains, while invariant harm is usually concentrated in one or two. This matters for how we read the harmful invariant category of Section ??. Most of those concepts are not harmful everywhere. They fire in every domain but do their damage in a few. An alignment objective that equalises activation statistics cannot help here, because these concepts already have balanced activations. The asymmetry that makes them harmful is invisible to it. The neutral panel of Fig. 5 makes a separate point: 35.2% of near-zero-D pairs land in the high-H, high-R cell. Entropy is scale-insensitive, so tiny effects spread evenly still score as consistent. This is why R must be read behind the magnitude gate introduced in Section ??. [URL 🔗](#page-0)
+The two scores are not independent. Both are entropies over the three source domains, so a pair that clears τR = 0.7 must have nonzero effect in every source domain. An even split across only two domains gives log 2/ log 3 = 0.63, which falls below the threshold. The same bound applies to H. High consistency therefore implies broad activation, and the data confirms this: only 8 of the 273 pairs with non-negligible effect are low-H but high-R (Figure 4). R acts as a filter applied inside the invariant population, not as a rival measure of invariance. But it is a filter that removes a great deal. Of the 1173 high-H pairs, only 50.7% also clear τR. Knowing that a concept is activation-invariant tells us almost nothing about whether its effect is consistent.
 
+The central observation of this section emerges when the invariant population is split by the sign of D. Among invariant concepts that support the correct class, 72.4% (76/105) are also consistent. Among invariant concepts that hurt the correct class, only 36.0% (32/89) are. Invariant support is usually spread across domains; invariant harm is usually concentrated in one or two. The asymmetry strengthens monotonically as the threshold tightens, reaching 65.2% against 27.3% at τ = 0.8 and 49.4% against 15.4% at τ = 0.9, so the qualitative conclusion does not depend on a particular choice of threshold.
 
-*Figure 2: A highly invariant concept that has a high positive discrimination on the dog class, and a high negative discrimination on the horse class.*
+This matters for how the harmful invariant category should be read. Most of those concepts are not harmful everywhere; they fire in every domain and do their damage in a subset. An alignment objective that equalizes activation statistics cannot address them, because their activations are already balanced — that balance is what qualifies them as invariant in the first place. The asymmetry that makes them harmful is invisible to any activation-level criterion.
 
-*Figure 3: A highly invariant concept that has a near zero discrimination on the 4 classes above.*
+The neutral panel of Figure 4 makes a separate point: 38.4% of near-zero-D pairs land in the high-H, high-R cell. Entropy is scale-insensitive, so a concept with negligible influence spread evenly across domains scores as perfectly consistent. Consistency of a non-effect is meaningless, which is why R is interpreted only for pairs satisfying |D(k, c)| > τD.
 
-We then test whether low-R concepts behave differently as a group. We mask every class–concept pair below a threshold on R and sweep the threshold (Fig. 4, Table 3). The three source domains barely move: +0.15, +0.78, and +0.01 percentage points. Held-out sketch accuracy rises by 7.67 points at τR = 0.8. The gain appears only in the domain the diagnostic never saw. The shape of the curve is also informative. Most of the effect arrives by τR = 0.1 (+3.35 points), where we remove only concepts whose effect sits almost entirely in one domain. Accuracy then climbs gradually and drops back to +6.38 at τR = 0.9. At that point we start removing consistent concepts along with concentrated ones. If ablation were simply good for a weak domain, the curve would keep rising. The turnover suggests the mask is selecting a specific population instead. [URL 🔗](#page-0)
-
-
-*Figure 4: Held-out sketch accuracy as concepts with concentrated discriminative effect are removed. The horizontal axis is the threshold below which a class–concept pair is masked; zero masks nothing. Accuracy peaks at +7.6 points at τR = 0.8, then declines as consistent concepts start being removed as well.*
-
-Three limits on this result. First, the mask uses each image’s true label to decide what to remove, so it is an oracle diagnostic and not something that could run at test time. [TODO: Report the label-free variant here once available; it is the only version relevant to deployment.] Second, the mask is not gated on so many of the pairs it removes have near-zero effect. [TODO: Rerun the sweep masking only pairs with > τD, and report pair counts. If most of the sketch gain survives, the claim is about concentrated discriminative concepts. If not, part of it is dictionary denoising, and this paragraph should say so.] Third, a low R can mean two things. The effect may be genuinely confined to one domain, or merely skewed across three: a split of (0.8, 0.15, 0.05) gives R = 0.56 with all domains active. For this reason we call low-R concepts domain-contingent rather than spurious. R measures where an effect concentrates. It says nothing about whether the underlying visual cue is causally unrelated to the label. [TODO: Add controls before finalising: a matched-size random mask, and an inverse mask that keeps low-R pairs and removes high-R ones. Without these a reviewer can argue that removing any large set of concepts helps a weak domain.]
-
-|   | Source domains | Target |
-| --- | --- | --- |
-| Configuration |   | Art painting Cartoon Photo Sketch |
-| Original model | 99.31 | 99.03 99.77 80.29 |
-| SAE reconstruction | 99.31 | 98.98 99.77 80.20 |
-| + rare-concept mask (nk,c < 30) | 99.34 | 99.03 99.81 83.40 |
-| + low-R mask (R < 0.8) | 99.48 | 99.81 99.82 91.08 |
-
-*Table 3: Per-domain accuracy under successive concept interventions. Each row adds to the one above it. The two masking rows use the true label and are oracle diagnostics. Source and target accuracy are reported separately rather than pooled, since three of the four domains are in distribution.*
+Two limits bound what this section claims. First, a low R admits two readings: the effect may be genuinely confined to one domain, or merely skewed across three, since a split of (0.8, 0.15, 0.05) gives R = 0.56 with all domains active. We therefore call low-R concepts domain-contingent rather than spurious; R measures where an effect concentrates and says nothing about whether the underlying visual cue is causally unrelated to the label. Second, and more importantly, we do not claim that R carries information independent of the sign and magnitude of D. The harmful population is enriched approximately twofold in low-R pairs relative to the supportive population, so in this model the two are correlated, and separating them would require mass-matched interventions that we do not perform. The results of Section 5.4 are accordingly presented as validation that the diagnostic categories correspond to functional behavior, not as evidence that consistency is causally prior to sign.
 
 
-*Figure 5: High activation invariance does not imply a consistent discriminative effect. Pairs are split by the sign and magnitude of D(k, c), then cross-tabulated by H and R at threshold 0.7. Among invariant pairs that support the correct class, 72.5% are also consistent; among invariant pairs that hurt it, only 29.7% are. The neutral panel shows why R needs a magnitude gate. Pairs active on fewer than 30 images for the class are excluded (Section ??).*
+*Figure 2: A single concept responding to the chest and forelimb region of four-legged mammals, shown across domains for dog (top) and horse (bottom). The concept is invariant and consistent, supports dog (D > 0) and harms horse (D < 0). Nothing about the detector is defective; the same visual evidence is read as dog-evidence on both animals.*
 
-## 5.4 The concept typology reveals distinct class-level failure modes
-
-We next count the discriminative concept mass in each typology bucket. Table ?? should report either raw counts or |D|-weighted masses by class. The important comparison is not just how many invariant concepts exist, but how many of them are robust-supporting versus harmful or domain-contingent.
-
-Expected write-up after results are available. [TODO: Insert: Classes with lower target accuracy have lower robust support mass and/or higher harmful invariant or conflict mass. Name the strongest classes and weakest classes.]
-
-## 5.5 Harmful invariant concepts demonstrate why invariance is not enough
-
-A central category is the high-H, high-R, negative-D bucket. These concepts are stable across domains and consistently discriminative, but in the wrong direction: ablating them increases the model’s confidence in the correct class. This bucket directly challenges the assumption that invariant concepts are automatically desirable.
-
-Expected write-up after results are available. [TODO: Insert: Give one or two concrete concept examples. Describe what the concept appears to capture, which class it is evaluated for, its H/D/R scores, and why it is harmful or supportive. Avoid overclaiming semantic labels unless visual evidence is clear.]
-
-## 5.6 Class-conflict profiles reveal lack of class isolation
-
-Because D is class-conditional, the same concept may support one class and hurt another. This motivates conflict mass. A high-conflict concept is not merely non-invariant; it is shared in a way that interferes with class separation. This section should use the M or conflict processor to show how often concepts have positive effect for one class and negative effect for another.
-
-Expected write-up after results are available. [TODO: Insert: Classes with high conflict mass exhibit lower accuracy or more unstable intervention behavior. Identify whether conflict is driven by specific concept families or distributed broadly across many concepts.]
+*Figure 3: A highly invariant concept with near-zero discriminative effect on all four classes shown. It responds to the four-legged body plan, which is shared across dog, horse and elephant and therefore separates none of them.*
 
 
-*Table 4: Class-level diagnostic profiles. Higher robust support mass is desirable; higher harmful invariant, domain-contingent, and conflict mass indicate potential failure modes.*
+*Figure 4: High activation invariance does not imply a consistent discriminative effect. Pairs are split by the sign and magnitude of D(k, c), then cross-tabulated by H and R at threshold 0.7. Among invariant pairs that support the correct class, 72.4% are also consistent; among invariant pairs that hurt it, only 36.0% are. The neutral panel shows why R needs a magnitude gate. Pairs active on fewer than 30 images for the class are excluded.*
 
-| Class Accuracy RSM | HIM | DCM | Conflict |
+## 5.4 The typology corresponds to functional prediction behavior
+
+We next test whether the diagnostic categories describe real model behavior by ablating each bucket in SAE code space and re-evaluating. For an image with true label y, the concepts masked are those paired with y in the bucket. These are oracle interventions: they use the ground-truth label and are not deployable test-time methods. Their role is that of any controlled ablation. If removing a category changes prediction behavior in the direction the diagnostic predicts, the category captures something functional.
+
+Two considerations frame every row of Table 3. First, the direction of the sign effect is tautological. D is defined as the drop in the true-class posterior under ablation, so masking negative-D pairs must raise that posterior. Only the magnitude, the asymmetry between source and target domains, and the margin over a matched control carry information. Second, we therefore pair every intervention with a size-matched, |D|-histogram-matched random control drawn from the support-floored pairs the target did not select, averaged over three seeds. Without such a control the objection that ablating any comparable set of concepts helps a weak domain would be unanswerable. Stratification is essential rather than cosmetic: 1269 of the 1542 support-floored pairs are neutral, so a uniformly sampled control is trivially easy to outperform.
+
+Because the baseline leaves 19.78 percentage points of error on sketch, we also express each intervention as the fraction of that error it recovers, which makes effect sizes comparable across buckets of very different size.
+
+Four results follow. First, the categories are functional and the controls are decisive. Masking the 138 harmful pairs raises sketch accuracy by 7.24 points macro, recovering 45.6% of the model's target-domain error. Masking 138 random pairs with a closely matched effect-mass profile lowers it by 20.98 points. The two move in opposite directions, a margin of 28 points. Every harmful bucket outperforms its control by 5 to 28 points; every supportive bucket underperforms its control by 40 to 63.
+
+Second, the gains are not dictionary denoising. Of the 114,688 class–concept pairs, 111,530 have zero measured effect in every source domain. Masking all of them moves sketch by 0.08 points, recovering 0.6% of the error, despite their aggregate |D| mass (0.069) exceeding that of the 35-pair distributed-harm bucket (0.087). Effect mass spread thinly over a hundred thousand pairs cannot move a decision; the same mass concentrated in 35 pairs flips predictions. This also cautions against using aggregate |D| as an importance measure.
+
+Third, the concepts that cost the most are the ones that score best on invariance. The 35 pairs that are both invariant and consistent in their harm — 0.03% of the grid — account for 25.1% of all target-domain errors, and the 32-pair harmful invariant bucket accounts for 22.6%. Per pair, distributed harm is 5.5 times more damaging than concentrated harm (0.72% against 0.13% of errors each). These are precisely the concepts an activation-alignment penalty has no gradient to act on.
+
+Fourth, distributed rather than concentrated support is what the model runs on. Masking the 81 pairs of distributed support costs 39 points; masking the 54 pairs of concentrated support costs 0.65 points and is indistinguishable from its random control at −1.07. Across every intervention the three source domains move by less than one point while sketch moves by as much as 60, so the diagnostic is estimated only on source domains yet its consequences appear almost entirely in the domain it never saw.
+
+|   | Source domains (macro) |   |   | Target |   |   |   |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Intervention | Art | Cartoon | Photo | Sketch macro | Δ | Errors recovered | Control Δ |
+| Baseline (SAE reconstruction) | 99.35 | 99.19 | 99.78 | 83.63 | — | — | — |
+| Mask all harmful (138 pairs) | 99.75 | 99.84 | 99.86 | 90.87 | +7.24 | 45.6% | −20.98 |
+| Mask distributed harm (35) | 99.49 | 99.44 | 99.86 | 87.32 | +3.69 | 25.1% | −3.12 |
+| Mask harmful invariant (32) | 99.49 | 99.41 | 99.86 | 86.96 | +3.33 | 22.6% | −2.10 |
+| Mask concentrated harm (103) | 99.63 | 99.69 | 99.78 | 86.17 | +2.54 | 13.4% | −5.40 |
+| Mask inert pairs only (111,530) | 99.35 | 99.19 | 99.78 | 83.71 | +0.08 | 0.6% | — |
+| Mask concentrated support (54) | 99.29 | 99.12 | 99.78 | 82.98 | −0.65 | — | −1.07 |
+| Mask distributed support (81) | 74.39 | 80.83 | 77.45 | 44.55 | −39.08 | — | +1.06 |
+| Mask all supportive (135) | 56.91 | 63.11 | 59.72 | 23.63 | −60.00 | — | +2.50 |
+
+*Table 3: Concept interventions. All masks are class-conditional and use the true label. Δ is against the SAE-reconstruction baseline. "Errors recovered" is the share of the baseline's 19.78 point target-domain error (micro) that the intervention removes. "Control Δ" is the mean change under three size-matched, |D|-histogram-matched random masks. Source and target accuracy are reported separately rather than pooled, since three of the four domains are in distribution.*
+
+**Sufficiency of robust support.** We also invert the mask, retaining a single bucket and ablating everything else (Table 4). Retaining only the 76 robust-support pairs and ablating the remaining 114,612 — 99.93% of the grid — yields 94.02% macro and 93.56% micro on sketch, above the unablated model, with source domains at 99.85% to 100%. The frozen model therefore already contains a concept subset sufficient for 94% accuracy on a domain it never saw, and that subset is identifiable from source-domain statistics alone. Its failure to reach that accuracy is a matter of selectivity rather than of representational capacity.
+
+Two comparisons keep this interpretable rather than circular. Retaining 76 arbitrary pairs, size-matched per class, collapses the model to exactly chance (14.29% macro, with every prediction becoming person), so the accuracy reflects which concepts were retained and not the label used to address the mask. And since all three keep-only rows share the same label-injection component, differences between them are informative: concentrated support alone reaches 25.00%, robust support alone reaches 94.02%, and adding the concentrated pairs on top of robust support moves it only to 95.00%. Domain-contingent support is close to redundant.
+
+This comparison does, however, conflate consistency with effect magnitude: robust support carries roughly ten times the |D| mass of concentrated support. We therefore do not claim that distributed support is sufficient because it is distributed rather than because it is larger.
+
+| Keep only | Pairs kept | Sketch macro | Sketch micro |
 | --- | --- | --- | --- |
-| Class 0 | [TODO: ] [TODO: ] [TODO: ] [TODO: ] [TODO: ] |   |   |
-| Class 1 | [TODO: ] [TODO: ] [TODO: ] [TODO: ] [TODO: ] |   |   |
-| Class 2 | [TODO: ] [TODO: ] [TODO: ] [TODO: ] [TODO: ] |   |   |
-| Class 3 | [TODO: ] [TODO: ] [TODO: ] [TODO: ] [TODO: ] |   |   |
-| Class 4 | [TODO: ] [TODO: ] [TODO: ] [TODO: ] [TODO: ] |   |   |
-| Class 5 | [TODO: ] [TODO: ] [TODO: ] [TODO: ] [TODO: ] |   |   |
-| Class 6 | [TODO: ] [TODO: ] [TODO: ] [TODO: ] [TODO: ] |   |   |
+| — (baseline) | — | 83.63 | 80.22 |
+| 76 uniformly random pairs (3 seeds) | 76 | 14.29 / 14.25 / 14.82 | 4.07 / 4.05 / 4.84 |
+| Concentrated support | 54 | 25.00 | 18.25 |
+| Robust support (H, R ≥ 0.7, D > τD) | 76 | 94.02 | 93.56 |
+| All supportive | 135 | 95.00 | 94.25 |
 
-*Table 5: Model or checkpoint diagnostic profiles. If only ERM checkpoints are analyzed, label this table as checkpoint-level rather than algorithm-level.*
+*Table 4: Keep-only interventions. Every row retains concepts paired with the true label and therefore injects label information; the random row measures how much of the effect that injection accounts for. It collapses to chance, so the robust-support result reflects the retained bucket.*
 
-| Model/checkpoint | Accuracy RSM | HIM | DCM | Conflict |
-| --- | --- | --- | --- | --- |
-| ERM checkpoint [TODO: ID] | [TODO: ] [TODO: ] [TODO: ] [TODO: ] [TODO: ] |   |   |   |
-| ERM checkpoint [TODO: ID] | [TODO: ] [TODO: ] [TODO: ] [TODO: ] [TODO: ] |   |   |   |
-| [TODO: Optional additional DG model] [TODO: ] [TODO: ] [TODO: ] [TODO: ] [TODO: ] |   |   |   |   |
+## 5.5 Domain-contingent effects concentrate in the stylized source domains
 
-## 5.7 Model or checkpoint profiles summarize representational failure modes
+Because R is an entropy over per-domain effects, for every low-R pair we can ask which source domain carries the effect, as argmax over d of |Dd(k, c)|. This requires no intervention.
 
-We aggregate class-level profiles to produce model or checkpoint profiles. This is the paper’s model-level extension. The goal is not to propose a new model-selection metric, but to summarize how discriminative concept mass is distributed across useful and harmful categories.
+A raw table of those counts would be confounded, since a domain in which all effects are systematically larger wins the argmax regardless of concentration. Mean |Dd| over non-neutral pairs is indeed uneven, at 2.13 × 10−3 for art painting, 1.92 × 10−3 for cartoon and 1.15 × 10−3 for photo, and active-image exposure differs as well. We therefore compare the low-R distribution against the same distribution for high-R pairs, which are by construction not concentrated and so provide the appropriate null.
 
-Expected write-up after results are available. [TODO: Insert: Higher-performing checkpoints tend to have higher RSM and lower HIM/DCM/conflict, or explain any deviations. Phrase cautiously: profiles summarize failure modes rather than serving as a validated model-selection rule.]
+Concentrated support is enriched 2.3-fold in cartoon relative to the null (46.3% against 19.8%). Concentrated harm is enriched 1.7-fold in art painting (37.9% against 22.9%). Photo is depleted three to four-fold in both, at 5.6% and 6.8% against a null of roughly 22%. Cartoon's dominance of the harmful column, at 55.3%, is not a concentration effect, since the null is 54.3%: cartoon supplies most harmful effect in this model whether or not that effect is domain-contingent, and only the supportive column shows genuine cartoon-specific concentration.
 
-## 5.8 Oracle interventions validate the diagnostic categories
+The pattern is that domain-contingent effect resides in the stylized source domains rather than in photographs. Since the held-out target is itself a stylized, texture-poor domain, the concepts carrying domain-contingent effect are the style-sensitive ones, which is consistent with their influence failing to transfer to a different style. We record this as a coherent reading rather than a demonstrated mechanism; establishing it would require per-domain interventions we do not perform, and part of photo's depletion is mechanical given its smaller mean effect and lower exposure.
 
-Finally, we test whether concept categories correspond to functional behavior by masking or keeping specific sets of concepts. These interventions are diagnostic. Some use the ground-truth class k and are therefore oracle interventions. We report this explicitly.
+## 5.6 Concepts are not class-isolated, and harm is largely misdirected support
 
-Expected write-up after results are available. [TODO: Insert: Removing harmful concepts improves or changes accuracy by X. Removing only harmful invariant concepts changes accuracy by Y, validating that invariant-but-harmful concepts are functionally meaningful. Keeping only robust support yields Z, showing whether robust-support concepts contain sufficient evidence. The no-label global mask is weaker/stronger by W and should be interpreted as a leakage sanity check.]
+Because D is class-conditional, the same latent can support one class and hurt another. We call a concept conflicting if it satisfies D(k, c) > τD for at least one class and D(k′, c) < −τD for at least one other, both above the support floor. No co-activity assumption is needed: D(k, c) accumulates only over images of class k on which c actually fires, so a conflict certifies that the concept fires on images of both classes.
+
+Of the 533 concepts with at least one class above the support floor, 139 are non-neutral for at least one class. Of those, 56 (40.3%) are conflicting. More tellingly, 108 of the 138 harmful class–concept pairs, or 78.3%, involve a concept that supports some other class.
+
+This is the paper's answer to why a trained model contains harmful concepts at all. Negative discriminative effect is, four times out of five, not a spurious or defective feature. It is a genuine feature attached to the wrong class. The chest-and-forelimb concept of Figure 2 is the archetype: shared visual structure that the representation never separated, disambiguated in distribution by cues that weaken under shift, after which the shared detector still fires and votes for the wrong class. The most conflicted concepts by contrast max_k D − min_k D support giraffe while harming person, support dog while harming elephant, and support horse while harming dog.
+
+The consequence for remediation is that "remove the spurious feature" is the wrong prescription, because the feature is not spurious. The problem is class isolation: the same evidence must be read differently depending on what else is present. That is a property of the read-out rather than of the features.
+
+Table 5 gives the per-class picture. The weakest class on the target domain, dog at 48.06%, carries both the most harmful pairs and the most conflicting concepts acting against it, while the strongest, guitar at 97.37%, carries almost none. But person carries 32 harmful pairs and 26 conflicting concepts and still reaches 95.62%, so conflict burden alone does not predict per-class failure. The resolution is visible in the collapse behavior of the degenerate masks in Section 5.4: surviving predictions consistently pile onto person, which is the model's default class and therefore wins ties. Class-level robustness depends on at least two quantities, the conflict burden a class carries and whether it wins or loses the resulting ties. A one-dimensional per-class risk score cannot express this, and with seven classes we do not attempt a correlation. Giraffe, at 76.89% with only 10 conflicting concepts against it, is not explained by either quantity.
+
+| Class | Sketch acc. (micro) | Pairs above floor | Supportive | Harmful | Neutral | Harmed by conflicting concept |
+| --- | --- | --- | --- | --- | --- | --- |
+| dog | 48.06 | 286 | 33 | 50 | 203 | 34 |
+| elephant | 95.54 | 208 | 23 | 16 | 169 | 15 |
+| giraffe | 76.89 | 185 | 15 | 10 | 160 | 10 |
+| guitar | 97.37 | 150 | 12 | 3 | 135 | 2 |
+| horse | 83.21 | 243 | 24 | 24 | 195 | 18 |
+| house | 88.75 | 144 | 9 | 3 | 132 | 3 |
+| person | 95.62 | 326 | 19 | 32 | 275 | 26 |
+
+*Table 5: Per-class diagnostic counts at τD = 10−4 with support floor 30. The final column counts concepts that harm this class while supporting another.*
 
 ## 6 Discussion
 
 ## 6.1 Invariance must be discriminatively aligned
 
-The main lesson is that activation invariance is not sufficient. A concept that appears across domains may be neutral, harmful, or useful only in a subset of domains. This explains why global alignment objectives can be
+The main lesson is that activation invariance is not sufficient, and our measurements let us say how insufficient. Conditioning on invariance nearly halves the probability that a concept is harmful but leaves the probability that it is useful unchanged, and 83.5% of invariant class–concept pairs have no measurable discriminative effect at all. Alignment objectives may therefore preserve a great deal of stable but unhelpful information. The relevant unit is not the globally invariant feature but the class-conditional concept whose activation and effect are both stable.
 
+The sharper point concerns what alignment cannot reach. A concept that is invariant and consistent in its harm has, by construction, balanced activation statistics across source domains; that balance is precisely what qualifies it as invariant. A penalty on cross-domain divergence in feature distributions therefore has no gradient to apply to it. Its pathology resides entirely in the sign of its effect on the class posterior, which no activation-level statistic measures. Empirically these are the most expensive concepts in the model: 35 class–concept pairs, 0.03% of the grid, account for a quarter of all target-domain errors.
 
-*Table 6: Concept interventions. The column “oracle information” explicitly states whether the intervention uses the true class or target-domain labels.*
+## 6.2 Failures of generalization can be failures of selectivity
 
-| Intervention | Rule | Oracle information Purpose |   | Accuracy |
-| --- | --- | --- | --- | --- |
-| Original model | None | None | Baseline | [TODO: |
-| SAE reconstruction |   | None after SAE reconstruction None | Reconstruction baseline | [TODO: |
-| Remove negative-D Mask D(k, c) < |   | True class k | Test harmful concepts | [TODO: |
-| Remove harmful invariant Mask high H, high R, negative D |   | True class k | Test invariant harm | [TODO: |
-| Keep robust support | Keep high H, high R, positive D | True class k | Test robust sufficiency | [TODO: |
-| Global no-label mask | Mask globally harmful concepts No true test label Leakage sanity check |   |   | [TODO: |
+The conventional reading of a domain-generalization failure is a deficit: the model did not learn features that transfer. Our keep-only results complicate that reading. Retaining 0.07% of the class–concept grid — the pairs that are invariant, consistent and supportive — raises held-out accuracy above that of the unablated model while leaving source accuracy at or above its original level. The representation already contains evidence sufficient for substantially better target-domain accuracy than the model achieves.
 
-insufficient: alignment may preserve stable but unhelpful information. The relevant unit is therefore not the globally invariant feature, but the class-conditional concept whose activation and effect are both stable.
+This is an oracle bound and not a method, since applying the mask requires each image's label. But the bound is informative about diagnosis rather than remedy: when a model underperforms out of distribution, one should ask not only whether the required features are absent but also whether they are present and diluted. The two diagnoses imply different interventions, and the framework distinguishes them.
 
-## 6.2 Class-conditional analysis is necessary
+A related observation is that ablations which are no-ops in distribution can be decisive out of distribution. Removing 99.93% of the grid leaves source accuracy unchanged, because in distribution the model carries enough redundant evidence that no single concept determines the decision. The same removal is worth ten points on the target domain, where the model operates closer to its decision boundary. Redundancy, rather than invariance, may be what degrades under shift.
+
+## 6.3 Class-conditional analysis is necessary, and harm is misdirected support
 
 A concept cannot be assigned a single global role without reference to class. The same latent can support one class and interfere with another. This is why all scores are defined as H(k, c), D(k, c), and R(k, c) rather than H(c), D(c), and R(c). Class-conditionality is not a technical detail; it is the mechanism by which the framework detects class conflict and lack of class isolation.
 
-## 6.3 Model-level profiles should be diagnostic, not prescriptive
+Our measurements give this a stronger form. Of the harmful class–concept pairs, 78.3% involve a concept that supports some other class. Negative discriminative effect is therefore, in the large majority of cases, not a spurious or defective feature but a genuine feature attached to the wrong class. A concept detecting the chest and forelimb region of a four-legged mammal is correct evidence for dog and, on a horse, becomes an argument for dog anyway. A global per-concept score would average these opposing effects toward zero and classify the concept as inert, concealing the mechanism entirely.
 
-Aggregating concept categories yields useful model-level summaries, but these summaries should not be oversold. A model profile can reveal whether a checkpoint has more robust-supporting mass or more harmful invariant mass. It may explain why one checkpoint behaves differently from another. However, validating these quantities as model-selection criteria would require additional datasets, seeds, algorithms, and pre-registered selection protocols. We leave that to future work.
+This reframes what remediation would involve. The instruction "remove the spurious feature" is misdirected, because the feature is not spurious and removing it would cost the class it legitimately serves. The problem is class isolation: the same evidence must be read differently depending on what else is present. That is a property of the read-out rather than of the feature set, and it suggests that objectives targeting class separation in concept space may be more appropriate than objectives targeting domain alignment.
 
-## 6.4 Diagnostic interventions are not deployment methods
+## 6.4 Class-level profiles should be diagnostic, not prescriptive
 
-The strongest interventions use the true class to decide which concepts to mask or keep. These are oracle interventions and should be interpreted as tests of the diagnostic categories, not as test-time algorithms. Their role is analogous to a controlled ablation: if removing a bucket changes prediction behavior in the expected direction, then the bucket captures functional model behavior.
+Aggregating concept categories yields per-class summaries, but these should not be oversold, and our own results show why. Conflict burden alone does not predict per-class target accuracy: the class carrying the second-heaviest burden is also the second most accurate, because it is the model's default prediction and therefore wins the ties that conflict produces. Class-level robustness depends on at least two quantities, and a one-dimensional risk score cannot express their interaction. Validating any such quantity as a model-selection criterion would require additional datasets, seeds, algorithms, and pre-registered selection protocols. We leave that to future work and report per-class counts descriptively.
+
+## 6.5 Diagnostic interventions are not deployment methods
+
+The interventions use the true class to decide which concepts to mask or keep. These are oracle interventions and should be interpreted as tests of the diagnostic categories, not as test-time algorithms. Their role is analogous to a controlled ablation: if removing a bucket changes prediction behavior in the expected direction, then the bucket captures functional model behavior.
+
+Two properties of our design make this more than a formality. The direction of any sign-based effect is guaranteed by the definition of D, so we rely on matched random controls rather than on direction: the harmful buckets outperform size- and magnitude-matched random masks by 5 to 28 points, and the matched control for the full harmful set moves target accuracy in the opposite direction. And the keep-only results are bounded by a control that retains an equal number of arbitrary pairs, which collapses the model to chance, establishing that those results reflect the retained concepts rather than the label used to address the mask.
+
+Whether any of this transfers to a label-free setting remains open. The label-free variants we examined, which collapse the mask across classes, are null — but they also discard the class-conditionality that our analysis identifies as the locus of the signal, so they are not a decisive test.
 
 ## 7 Limitations
 
@@ -402,16 +437,21 @@ Second, the framework is post-hoc. It may use class labels and domain labels to 
 
 Third, oracle interventions use the true class, and possibly target-domain statistics, to define masks. They validate concept categories but do not imply that the same accuracy changes can be achieved without labels at test time.
 
-Fourth, if the main experiments are limited to PACS and ERM ResNet checkpoints, the scope of the empirical claim is correspondingly limited. Additional datasets, algorithms, and backbones would strengthen external validity but are not necessary for the central diagnostic contribution.
+Fourth, the main experiments cover PACS with a single ERM ResNet-50 checkpoint and a single sparse autoencoder, so the scope of the empirical claim is correspondingly limited. Because SAE dictionaries are not identifiable across independently trained autoencoders, we would compare only aggregate quantities across seeds — typology proportions, the support and harm asymmetry, and the fraction of target error attributable to each bucket — and we have not done so. Additional datasets, algorithms, backbones and seeds would strengthen external validity but are not necessary for the central diagnostic contribution. In particular, the prediction that an explicitly alignment-trained model should retain comparably many invariant-and-harmful concepts follows from our argument and remains untested.
 
+Fifth, threshold choices affect bucket assignments. We report sensitivity to τH and τR in Section 5.3, where the qualitative conclusion strengthens monotonically as the threshold tightens. The main conclusion should not depend on a single threshold value.
 
-Fifth, threshold choices affect bucket assignments. We therefore report sensitivity to τH, τR, and τD in Appendix ??. The main qualitative conclusion should not depend on a single threshold value.
+Sixth, we do not establish that consistency carries information independent of the sign and magnitude of discriminative effect. Harmful pairs are enriched approximately twofold in low-consistency pairs, and the keep-only comparisons conflate consistency with effect magnitude. Establishing independence would require mass-matched bucket comparisons. Relatedly, aggregate effect mass proves to be a poor proxy for consequence in our data — 111,530 pairs whose total mass exceeds that of a 35-pair bucket recover forty times less error — so such comparisons would need to match the distribution of per-pair magnitudes rather than their sum.
 
 Finally, reconstruction fidelity is a necessary precondition for interpreting ablations. If an SAE reconstruction substantially changes model predictions, downstream concept effects must be described as effects in SAE reconstruction space rather than direct effects in the original model.
 
 ## 8 Conclusion
 
-This paper introduced sparse concept diagnostics for domain generalization. The central argument is that DG should not be diagnosed by activation invariance alone. A useful invariant concept must also be class- supporting, consistent in its discriminative effect across domains, and isolated from competing classes. By decomposing trained vision models into SAE-derived candidate concepts and scoring each concept class- conditionally, the framework distinguishes robust support from harmful invariance, domain-contingent cues, and class conflict. The resulting class-level and model-level profiles provide a structured way to understand DG failure modes beyond accuracy. Rather than proposing a new DG algorithm, sparse concept diagnostics offer a post-hoc audit of what trained DG models have learned and why their invariant features may or may not support generalization.
+This paper introduced sparse concept diagnostics for domain generalization. The central argument is that DG should not be diagnosed by activation invariance alone. A useful invariant concept must also be class-supporting, consistent in its discriminative effect across domains, and isolated from competing classes. By decomposing trained vision models into SAE-derived candidate concepts and scoring each concept class-conditionally, the framework distinguishes robust support from harmful invariance, domain-contingent cues, and class conflict.
+
+Applied to a frozen ERM ResNet-50 on PACS, the framework yields three findings that target-domain accuracy alone cannot express. Invariance is weakly informative about the absence of harm and uninformative about the presence of usefulness. The concepts most costly to held-out accuracy are those that score best on invariance, and are therefore precisely the concepts an activation-alignment objective cannot act upon. And harmful concepts are, in the large majority, not spurious features but genuine features attached to the wrong class, which makes class isolation rather than feature removal the appropriate target.
+
+Rather than proposing a new DG algorithm, sparse concept diagnostics offer a post-hoc audit of what a trained model has learned, how much of its held-out error is attributable to identifiable concepts, and whether its shortfall reflects missing evidence or evidence that is present but diluted.
 
 ## Broader Impact Statement
 

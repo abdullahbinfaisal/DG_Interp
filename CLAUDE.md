@@ -1,7 +1,8 @@
 # CLAUDE.md — Sparse Concept Diagnostics for Domain Generalization
 
-Session primer for this repo. Read this first, then `docs/context.md` (experiment
-spec) and `docs/TMLR_Journal_Submissions__1_.md` (paper draft).
+Session primer for this repo. Read this first, then `docs/EXPERIMENTS.md` (what to
+run and why), `docs/RESULTS_DRAFT.md` (written-up results + patch list for the
+paper) and `docs/TMLR_Journal_Submissions__1_.md` (paper draft).
 
 ---
 
@@ -47,15 +48,21 @@ thresholds move.
 `R` may be a proxy for the **sign** of `D`. Low-R pairs are enriched ~2.5× in
 negative-D pairs, and masking negative-D pairs raises `p(y)` *by construction*
 (that is how D is defined). The mass-matched experiments (E3/E4 in
-`docs/context.md`) exist to separate "R carries independent information" from
+`docs/EXPERIMENTS.md` §10) exist to separate "R carries independent information" from
 "R correlates with harm". **E3 is decisive. Do not write up the direction of a
 sign-based effect as a finding.**
 
-A second, more interesting result is already emerging: low-R concepts are not
-junk. Masking the harmful ones helps a lot (+10.03pp sketch); masking the
-supportive ones collapses the model to chance. If that holds, the model's class
-evidence substantially *consists of* domain-contingent concepts — a
-concept-level mechanism for the discrimination–invariance tradeoff.
+**RESOLVED 2026-07-31, and the answer is the opposite of the old hypothesis.**
+The project previously believed low-R concepts were load-bearing — that "the
+model's class evidence substantially consists of domain-contingent concepts".
+Clean data refutes this. Concentrated support (`S+_lo`, 54 pairs) is
+indistinguishable from a matched random mask when ablated (−0.65 vs −1.07), and
+retaining it alone collapses the model to 25.0%. Distributed support alone reaches
+94.0%, and adding the concentrated pairs on top moves that only to 95.0%.
+
+The replacement claim is cleaner and aligns with the §5.3 asymmetry: **the model
+runs on invariant, distributed support; domain-contingent support is close to
+redundant.** See `docs/RESULTS_DRAFT.md` §5.4.
 
 ---
 
@@ -96,8 +103,11 @@ generate_tmlr_results.py    1711-line CLI harness: typology, masks, sensitivity,
                             CSV tables. See §5 — its outputs are contaminated.
 docs/EXPERIMENTS.md         WHAT TO RUN: every experiment with rationale, expected
                             outcome, falsifier, and the risk register. Supersedes
-                            context.md §5 where they disagree.
-docs/context.md             original experiment brief E0–E13 + output schema
+                            the deleted context.md. §10 holds the deferred
+                            experiment specs, §11 the record of that brief.
+docs/RESULTS_DRAFT.md       written-up §5.1–5.6 + patch list for the paper
+docs/DISCUSSION.md          the "so what": insights from existing results only
+docs/DIRECTIONS.md          claims the results point at + how to settle them
 docs/RUNLOG.md              append-only log of every command an agent ran
 docs/TMLR_Journal_Submissions__1_.md    paper draft (many TODOs)
 
@@ -177,7 +187,7 @@ at exactly 1e-3.
 **`make_uniform_concept_mask(mask, reduce)`** — `"any"` masks a concept
 everywhere if *any* class masks it (extremely aggressive; collapses the model to
 14.29% = 1/7). `"all"` masks only if *all* classes do (~15.9k pairs; the null
-result in context.md §4.4). In the notebook these appear directly as
+label-free null result). In the notebook these appear directly as
 `mask.any(dim=0)` / `mask.all(dim=0)`.
 
 **The count filter must never touch a forward pass.** `H_counts < 30` as a
@@ -237,27 +247,29 @@ Text-mode reads of the 50 MB+ files have produced spurious `JSONDecodeError`s he
 
 ## 4. Verified facts (established by inspection — do not re-derive)
 
-**The micro/macro discrepancy is resolved.** `_build_report` computes an
-*unweighted mean over classes* → that is the 83.4x figure. Weighting the sketch
-per-class accuracies (48.71, 95.98, 77.97, 96.86, 82.24, 87.88, 94.62) by the
-counts above gives **80.30%**, matching the paper's Table 2 value of 80.29. The
-gap is driven by `house` (80 images) and `person` (160) being tiny in sketch
-while `dog` (772) is both the largest and the worst class. E0 is confirmed
-analytically; it still needs emitting to disk under the new eval protocol.
+**The micro/macro discrepancy is resolved and measured.** `_build_report` computed
+an *unweighted mean over classes* → that is the 83.4x figure. Confirmed on disk by
+B1: original model sketch **80.25 micro / 83.56 macro**, SAE reconstruction
+**80.22 / 83.63**. The paper's Table 2 value of 80.29 was micro. The gap is driven
+by `house` (80 images) and `person` (160) being tiny in sketch while `dog` (772) is
+both the largest and the worst class. Always report both.
 
-**Score-file population sizes** (`processed/NEW_ERM_ResNet_3300_T3.json`,
-support floor `H_counts ≥ 30`): 1363 pairs pass the floor; 217 are non-neutral at
-τ_D = 1e-4 (128 positive, 89 negative); 1146 neutral. These match
-`docs/context.md` §4.6 exactly, so that file is the provenance of every §4 number.
+**Score-file population sizes** (`processed/FINAL_ERM_ResNet_3300_T3.json`,
+support floor `H_counts ≥ 30`): **1542** pairs pass the floor; **273** are
+non-neutral at τ_D = 1e-4 (135 supportive, 138 harmful); 1269 neutral. The
+superseded `NEW_*` file gave 1363 / 217 (128 / 89) / 1146 — the difference is
+scoring on full domains rather than 80% splits, which raises `H_counts` and so
+admits more pairs.
 
-**Evaluation currently runs on each domain's 80% *train* split with
-`drop_last=True`.** `Load_PACS` returns `(train_loader, test_loader)` and every
-call site takes `dataloader, _ = ...`. For sketch that is 49×64 = 3136 of 3929
-images, and because `shuffle=True` a *different* ~7 images are dropped per call.
-This is exactly the ±0.08pp baseline jitter seen across notebook cells
-(83.40–83.48). Also, the 80% subset of `Load_PACS([one_domain])` is **not** nested
-inside the one from `Load_PACS([three_domains])` used for SAE training, so
-per-domain scoring splits partially overlap SAE training images.
+**Evaluation and scoring both use full domains** (`Load_PACS_full`): every image,
+no split, `shuffle=False`, `drop_last=False`. Deterministic. The legacy path
+(`Load_PACS`, still present and used by `Hc.py`/`M.py`) returns an 80% shuffled
+train split with `drop_last=True`, which dropped a *different* ~7 sketch images per
+call — the ±0.08pp jitter visible across notebook cells (83.40–83.48). Note also
+that the 80% subset of `Load_PACS([one_domain])` is **not** nested inside the one
+from `Load_PACS([three_domains])` used for SAE training, so any legacy per-domain
+scoring partially overlapped SAE training images. Full-domain scoring makes that
+moot but means scoring now includes the 20% the SAE never trained on.
 
 **`Normalizer` was built with `domains=None`**, so μ/σ came from one 1024-image
 batch spanning all four domains, sketch included. Numerically negligible (two
@@ -277,19 +289,23 @@ the old `R.py` sentinel (`entropy = -1` whenever the signed-normalised
 distribution went negative). The file also lacks `R_mag` / `R_sign_consistency`,
 which the current `R.py` writes.
 
-Consequence: every low-R result in `docs/context.md` §4 folds those 349
+Consequence: every low-R result in the deleted brief folds those 349
 sign-flipping pairs into "low-R". Inside the gated population (support ≥ 30,
 |D| > 1e-4, n = 217), **15 pairs are sentinels** (5 positive-D, 10 negative-D) —
-6.9%. They are *sign-inconsistent*, not concentrated. The §4.6 tables reproduce
-exactly off this file with sentinels counted in the `R < 0.7` column.
+6.9%. They are *sign-inconsistent*, not concentrated. The brief's typology tables
+reproduce exactly off this file with sentinels counted in the `R < 0.7` column,
+which is what pins that file as their provenance. On the clean file the same
+population has 376 sign-flipping pairs overall (0.33%) and they carry real R values
+rather than a sentinel.
 
 **(b) Every `archive/paper_results*` run computed H, D and R over all four
 domains.** `R_acts` has length 4 in all five archived score files, and `dump.txt`
 confirms `--process_domains 0 1 2 3` with an `R scores [sketch]` pass. Those
 tables violate the paper's central methodological commitment. Treat them as
-**indicative only, never as paper evidence** — including the otherwise-tempting
+**indicative only, never as paper evidence** — including the tempting
 `keep_robust_support_only` row (sketch 46.6% macro, with elephant/guitar/house at
-0.00) that would fill the draft's empty "test robust sufficiency" cell.
+0.00). That row is not merely contaminated, it is **wrong**: the clean measurement
+of the same intervention is **94.02%** macro (§8). Do not reuse it.
 
 **RESOLVED 2026-07-30.** `processed/FINAL_ERM_ResNet_3300_T3.json` is the first
 score file that is both source-only and magnitude-R: `R_acts` length 3, zero
@@ -301,16 +317,28 @@ history only. Verify any new score file with `scripts/inspect_scores.py`.
 
 ## 6. Code-running policy
 
-**Interpreter is pinned. Never call bare `python`.**
+**The user runs all scripts.** Do not execute them from an agent session — they
+crash unpredictably when launched that way (see §6.1). Hand over exact commands
+instead, one stage at a time, and wait for the output.
+
+**Preferred shell: Anaconda Prompt with the `interpretability` env activated.**
+There, bare `python` is correct:
+
+```
+cd /d c:\Users\sproj_ha\Desktop\SGen_Vision_Interp\Vision_Interp
+python scripts\build_scores.py --out processed\FINAL_ERM_ResNet_3300_T3.json
+```
+
+Only in a *non-activated* shell must the interpreter be spelled out, because bare
+`python` then resolves to `C:\Program Files\Python311\python.exe`, which cannot
+even `import torch` (missing `typing_extensions`) and produced three *different*
+spurious failures on the same 56 MB JSON:
 
 ```powershell
 $PYEXE = "C:\Users\sproj_ha\miniconda3\envs\interpretability\python.exe"
 ```
 
-Bare `python` on PATH resolves to `C:\Program Files\Python311\python.exe`, which
-cannot even `import torch` (missing `typing_extensions`) and produced three
-*different* spurious failures on the same 56 MB JSON. **PowerShell only** — the
-Bash tool also misbehaved on this box. Note PowerShell variables are
+Avoid the Bash tool on this box. In PowerShell, note that variables are
 case-insensitive: never use `$py` and `$PYEXE` in one script, they are the same
 variable.
 
@@ -318,6 +346,18 @@ variable.
 `processed/` or `results/` lives in `scripts/*.py` and imports from `clean_lib`.
 `nbconvert` is not installed, so notebook cells cannot be executed here at all —
 this is a hard constraint, not a preference.
+
+### 6.1 This machine is unstable under load
+
+Five distinct type-confusion failures were observed in one session — `'function'
+> int`, `list_iterator`, a tensor index returning `None`, a `str` chunk arriving
+as `bool`, and `WinError 1114` on `import torch` — all non-deterministic, all
+under heavy allocation churn, plus a `0xC0000409` fail-fast. Two consequences:
+
+- **Keep every stage independently resumable** (`--only`, `--stage`) so a crash
+  costs one stage, never a whole run.
+- **Minimise allocation churn.** Prefer one vectorised operation over a loop of
+  small ones; see the `dump()` note in §3.
 
 **Every run is recorded twice.**
 - `results/runs/<UTC-stamp>_<script>/manifest.json` — argv, resolved config, git
@@ -359,8 +399,8 @@ to review. No `git add`, no `git commit`, ever.
    MMD_ResNet_T3 and step 2100 exist on disk but are out of scope for now.
 5. **Promote the harness into `clean_lib`.** Move `MaskedAccuracyEvaluator` out
    of the notebook into `clean_lib/eval.py`, add mask-builder helpers, and write
-   `run_experiments.py` emitting `results/E*.json` + `results/summary.csv` per
-   `docs/context.md` §6. The notebook stays for exploration only.
+   `run_experiments.py` emitting `results/E_*.json` + `results/summary.csv`
+   (schema in `docs/EXPERIMENTS.md` §10). The notebook stays for exploration only.
 6. **Thresholds: decide from data after the recompute.** Do not hardcode τ_D,
    τ_H, τ_R yet. Candidates: τ_D ∈ {1e-4, 1e-3}, τ_H = τ_R ∈ {0.7, 0.8}. Pick
    whatever keeps bucket populations viable, then report full sensitivity (E12).
@@ -401,7 +441,7 @@ harmful); 1269 neutral.
 invariant harm concentrates — and it strengthens monotonically with τ, which is a
 better robustness story than any single threshold. The supportive figure barely
 moved from the old signed-R file (72.5 → 72.4); the harmful figure rose
-(29.7 → 36.0), so the asymmetry is real but weaker than §4 of context.md claims.
+(29.7 → 36.0), so the asymmetry is real but weaker than the old brief claimed.
 
 Only 8 of 273 non-neutral pairs are low-H and high-R, so "consistency
 presupposes broad activation" still holds. 38.4% of *neutral* pairs sit in the
@@ -426,59 +466,89 @@ pairs and 94.62% accuracy, so the relationship is not monotone (that is E10's jo
 | house | 144 | 9 | 3 |
 | person | 326 | 19 | 32 |
 
-### Masking results — still stale
+### Intervention results (2026-07-31, clean file, full-domain eval)
 
-All figures below are **macro** sketch accuracy from the signed-R source-only
-file on the 80% split. They need recomputation against FINAL under decision 3.
+Baseline = SAE reconstruction, nothing masked: **sketch 83.63 macro / 80.22 micro**;
+sources 99.19–99.78 macro. Original model sketch 83.56 / 80.25 — reconstruction
+drop ≤ 0.05pp on every domain, so §5.1 is settled.
 
-| Configuration | Sketch (macro) | Δ |
-|---|---|---|
-| Baseline (no mask) | 83.44–83.48 | — |
-| Mask all `D < 0` | 96.66 | +13.20 |
-| Mask all `D > 0` | 5.67 | −77.79 (collapse) |
-| Mask `R < 0.8` | 91.08 | +7.61 |
-| Mask `R < 0.8 ∧ D < 0` | 93.47 | +10.03 |
-| Mask `R < 0.8 ∧ D > 0` | 13.41 | collapse |
-| Label-free `R < 0.7` for all classes (~15k pairs) | 83.35 | −0.12 (null) |
+All masks are gated (`|D| > 1e-4`) and support-floored (`H_counts ≥ 30`), which is
+why they are small. Control = mean of 3 size- and |D|-histogram-matched random
+masks; margin = target Δ − control Δ on sketch macro.
 
-Per-class sketch baseline: dog 48.71, elephant 95.98, giraffe 77.97, guitar
-96.86, horse 82.24, house 87.88, person 94.62.
+| Mask | pairs | Σ\|D\| | sketch macro | Δ | control Δ | margin |
+|---|---|---|---|---|---|---|
+| all harmful | 138 | 0.250 | 90.87 | +7.24 | −20.98 | **+28.2** |
+| `S-_hi` distributed harm | 35 | 0.087 | 87.32 | +3.69 | −3.12 | +6.8 |
+| harmful-invariant | 32 | 0.083 | 86.96 | +3.33 | −2.10 | +5.4 |
+| `S-_lo` concentrated harm | 103 | 0.163 | 86.17 | +2.54 | −5.40 | +7.9 |
+| inert only (`R == 0`) | 111530 | 0.069 | 83.71 | +0.08 | — | — |
+| `S+_lo` concentrated support | 54 | 0.025 | 82.98 | −0.65 | −1.07 | +0.4 |
+| `S+_hi` distributed support | 81 | 0.237 | 44.55 | −39.08 | +1.06 | −40.1 |
+| all supportive | 135 | 0.262 | 23.63 | −60.00 | +2.50 | −62.5 |
 
-Note the ordering: masking harmful concentrated concepts gives +10.03, masking
-*all* low-R gives only +7.61. The rest of the low-R population is costing ~2.4
-points — i.e. it contains real class evidence.
+Keep-only (ablate everything except the named set):
 
-The R-threshold sweep rises to +7.61 at τ=0.8 then **falls** to +6.39 at 0.9.
-The turnover matters as much as the peak: if ablation were simply good for a weak
-domain the curve would keep rising. But most of the effect arrives by τ=0.1
-(+3.35), where the pairs being removed are largely inert (111,729 pairs have
-R exactly 0) — so part of that early gain may be dictionary denoising rather than
-a claim about concentrated concepts. The gated sweep (|D| > 1e-4) preserves the
-gain, which argues against pure noise removal, but this needs redoing on clean R.
+| Keep only | kept | sketch macro | sketch micro |
+|---|---|---|---|
+| 76 uniformly random pairs (3 seeds) | 76 | 14.29 / 14.25 / 14.82 | 4.07 / 4.05 / 4.84 |
+| `S+_lo` | 54 | 25.00 | 18.25 |
+| robust support (H,R ≥ 0.7, D > τ_D) | 76 | 94.02 | 93.56 |
+| all supportive | 135 | 95.00 | 94.25 |
 
-**Two unrelated criteria (low-R, low-count) both give large gains
-class-conditionally and nothing uniformly.** The common factor is
-class-conditionality, not the criterion. That is a finding, not a failure: almost
-no concept is concentrated for *every* class at once. Concepts are
-domain-contingent for particular classes, not in general.
+**What these establish.**
+1. The categories are functional and the controls are decisive — every harmful
+   bucket beats its matched random control by 5–28 points, and the control for
+   "all harmful" moves in the *opposite* direction (−20.98 vs +7.24).
+2. **No denoising confound.** Masking all 111,530 inert pairs moves sketch +0.08,
+   despite their aggregate |D| mass exceeding `S-_hi`'s.
+3. **No label injection in the keep-only rows.** Keeping 76 *random* pairs gives
+   exactly chance (14.29%, everything predicted `person`), so the 94.02 is a
+   property of the bucket.
+4. Every intervention leaves the three source domains within one point while moving
+   sketch by up to 60 — the diagnostic is source-estimated but its consequences
+   appear in the unseen domain.
+
+**Known limit:** robust support carries ~10× the mass of `S+_lo` (0.236 vs 0.025),
+so keep-only comparisons conflate R with effect magnitude. Not separable without
+mass-matched buckets, which are deliberately out of MVP scope.
+
+### The old §8 table was mislabelled — do not reinstate it
+
+The superseded table's rows read "Mask `R < 0.8 ∧ D < 0` → 93.47 (+10.03)". That
+run actually masked **114,609 pairs**: the notebook did `filter("R",[(0.7,None)])`
+then `filter("D",[(1e-4,None)])`, which *keeps* high-R supportive pairs, and
+`get_mask()` then ablates the complement. It was **keep-only distributed support**,
+not a harmful-concept mask — the polarity inversion documented in §3.
+
+Re-read correctly it reproduces: old 93.47 vs clean `keep_robust_support` 94.02.
+Likewise "Mask `R < 0.8 ∧ D > 0` → 13.41" was keep-only *harmful*, hence the
+collapse. And "Mask all `D < 0` → 96.66" was ungated and un-floored, so it swept in
+tens of thousands of pairs rather than 138. None of those rows is comparable to the
+gated buckets above; the numbers were never wrong, the labels were.
 
 ---
 
 ## 9. Immediate next steps
 
-1. ~~Full-domain loader~~ — done (`Load_PACS_full`).
-2. ~~Regenerate the score JSON~~ — done and verified:
-   `processed/FINAL_ERM_ResNet_3300_T3.json`.
-3. Finish threshold selection: run `inspect_scores.py --tau-d 1e-3` and compare
-   bucket viability against 1e-4, then write the chosen τ_D, τ_H, τ_R into
-   `config.py`. τ_H = τ_R = 0.7 is already indicated (see §8).
-4. Promote `MaskedAccuracyEvaluator` → `clean_lib/eval.py`; add micro **and**
-   macro to `_build_report`, plus a predicted-label histogram.
-5. Run E0 → E1 → E2 → E3 (blocking, in that order) per `docs/context.md` §5,
-   writing the §6 JSON schema plus `summary.csv`.
-6. Regenerate the typology heatmap and the §4.6 counts against the clean file.
-7. Then E4–E12 in any order. E9 and E10 need no masking at all — the per-domain
-   effects already exist in `R_acts`.
+The MVP experiment programme is **complete** (Group A + B1–B5, 2026-07-31). The
+plan is `docs/EXPERIMENTS.md`; the written-up §5.1–5.6 plus a patch list is
+`docs/RESULTS_DRAFT.md`.
+
+1. ~~Full-domain loader~~, ~~regenerate score JSON~~, ~~promote the evaluator~~,
+   ~~threshold selection (τ_D = 1e-4, τ_H = τ_R = 0.7)~~, ~~Group A + B1–B5~~.
+2. **Review `docs/RESULTS_DRAFT.md`** — six subsections, six tables.
+3. **Apply its patch list** to `docs/TMLR_Journal_Submissions__1_.md`: replace
+   §5.1–5.3, merge §5.8 into a new §5.4, repurpose §5.5, replace §5.6, cut §5.7.
+   Eight subsections become six.
+4. Purge the stale numbers the patch list enumerates — §4.2's "exclusively source
+   domains" clause, §4.3's threshold TODOs, §5.3's sweep / Fig. 4 / Table 3, and
+   §3.6's unused sign-consistency score.
+5. Re-quote H/D/R for the concept grids in `analysis/` from the clean file; the
+   folder names encode scores from the superseded file.
+6. Optional, one command each: `analyze_scores.py --tau-d 1e-3` for τ_D
+   sensitivity; mass-matched buckets if a reviewer challenges the R-vs-magnitude
+   conflation acknowledged in §5.4.
 
 ---
 
