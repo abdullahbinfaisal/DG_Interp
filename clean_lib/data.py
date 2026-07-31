@@ -102,6 +102,54 @@ class PACSDataset(Dataset):
 		return tensor, torch.tensor(label, dtype=torch.long)
 
 
+PACS_TRANSFORM = transforms.Compose([
+	transforms.Resize(256),
+	transforms.CenterCrop(224),
+	transforms.ToTensor(),
+	transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+])
+
+
+def Load_PACS_full(
+	domains: Optional[List[str]] = None,
+	batch_size: int = 64,
+	root_dir: str = r"C:\Users\sproj_ha\Desktop\DomainBed\domainbed\data\PACS",
+	num_workers: int = 0,
+	preload_to_gpu: bool = False,
+):
+	"""Deterministic loader over *every* image in the requested domains.
+
+	Unlike Load_PACS this applies no train/test split, no shuffling and no
+	drop_last, so the same call always yields the same images in the same order
+	and nothing is silently discarded.
+
+	Load_PACS returns an 80% shuffled train split with drop_last=True, which
+	drops a different tail of images on every call (~7 sketch images, giving
+	roughly +/-0.08pp of jitter in reported accuracy). Use this function for
+	anything whose number ends up in the paper.
+
+	Returns a single DataLoader, not a pair.
+	"""
+	if domains is None:
+		domains = ["photo", "art_painting", "cartoon", "sketch"]
+
+	dataset = PACSDataset(
+		root_dir=root_dir,
+		domains=domains,
+		transform=PACS_TRANSFORM,
+		preload_to_gpu=preload_to_gpu,
+	)
+
+	return DataLoader(
+		dataset,
+		batch_size=batch_size,
+		shuffle=False,
+		drop_last=False,
+		num_workers=0 if preload_to_gpu else num_workers,
+		pin_memory=not preload_to_gpu,
+	)
+
+
 def Load_PACS(
 	root_dir: str = r"C:\Users\sproj_ha\Desktop\DomainBed\domainbed\data\PACS",
 	domains: Optional[List[str]] = None,

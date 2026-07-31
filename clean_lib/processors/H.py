@@ -1,6 +1,5 @@
 import torch
 from tqdm import tqdm
-from clean_lib.data import Load_PACS
 from clean_lib.utils import extract_features
 from clean_lib.processors.processor import Processor
 from einops import rearrange
@@ -9,18 +8,11 @@ device = torch.device("cuda") if torch.cuda.is_available() else "cpu"
 
 
 class H(Processor):
-    def __init__(self, sae_manager, ckpt, process_domains, file_path, dataset="PACS"):
-        super().__init__(sae_manager, ckpt, process_domains, file_path, dataset)
+    """Activation invariance: normalised entropy of mean activation across the
+    processed domains. Says where a concept fires, not whether it helps.
 
-    @classmethod
-    def from_processor(cls, processor: Processor):
-        return cls(
-            sae_manager=processor.sae_manager,
-            ckpt=processor.ckpt,
-            process_domains=processor.process_domains,
-            file_path=processor.file_path,
-            dataset=processor.dataset,
-    )
+    __init__ and from_processor are inherited from Processor.
+    """
 
     def calculate_mean_activations(self):
         z = torch.zeros((7, self.sae_manager.nb_concepts, len(self.domains))).to(device)
@@ -32,10 +24,9 @@ class H(Processor):
 
         for d, domain in enumerate(self.domains):
 
-            if self.dataset == "PACS":
-                loader, _ = Load_PACS(domains=[domain])
+            loader = self.loader(domain)
 
-            for i, batch in enumerate(tqdm(loader)):
+            for i, batch in enumerate(tqdm(loader, desc=f"H [{domain}]")):
                 with torch.no_grad():
                     img, y = batch
                     img, y = img.to(device), y.to(device)

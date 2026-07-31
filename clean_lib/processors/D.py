@@ -1,7 +1,6 @@
 
 import torch
 from tqdm import tqdm
-from clean_lib.data import Load_PACS
 from clean_lib.utils import extract_features
 from clean_lib.processors.processor import Processor
 from einops import rearrange
@@ -13,19 +12,6 @@ device = torch.device("cuda") if torch.cuda.is_available() else "cpu"
 
 
 class D(Processor):
-    def __init__(self, sae_manager, ckpt, process_domains, file_path, dataset="PACS"):
-        super().__init__(sae_manager, ckpt, process_domains, file_path, dataset)
-
-    @classmethod
-    def from_processor(cls, processor: Processor):
-        return cls(
-            sae_manager=processor.sae_manager,
-            ckpt=processor.ckpt,
-            process_domains=processor.process_domains,
-            file_path=processor.file_path,
-            dataset=processor.dataset,
-    )
-
 
     def calculate_discrimination_scores(self):
          
@@ -34,8 +20,8 @@ class D(Processor):
         activation_counts = torch.zeros((self.classes, self.sae_manager.nb_concepts), device=device)
         
 
-        dataloader, _ = Load_PACS(domains=self.domains, batch_size=64)
-        
+        dataloader = self.loader(self.domains)
+
         self.sae.to(device)
         self.backbone.to(device)
 
