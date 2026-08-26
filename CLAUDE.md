@@ -38,10 +38,17 @@ for different classes. Never collapse a mask to a set of concept indices without
 keeping the class dimension.
 
 **Entropy bound that carries an argument.** With 3 source domains, `log|D| = log 3`.
-An even split over only 2 domains gives `log2/log3 = 0.63 < 0.7`. So at τ=0.7,
-`H ≥ 0.7` implies nonzero activation in **all three** source domains, and `R ≥ 0.7`
-implies nonzero effect in all three. This bound only works at 0.7 — restate it if
-thresholds move.
+The *maximum* normalised entropy attainable while only 2 domains are active is an
+even split over those two, `log2/log3 = 0.63`. So **any** τ > 0.63 implies nonzero
+activation (for `H`) or nonzero effect (for `R`) in **all three** source domains.
+
+0.7 is chosen as the **lowest** round value above that bound — the most permissive
+threshold that still carries the guarantee, hence the largest bucket populations.
+Stricter thresholds *keep* the guarantee (they are strictly stronger) but shrink
+the populations: at 0.9 the harmful-invariant bucket holds 6 pairs. Only τ ≤ 0.63
+loses the argument. **Corrected 2026-08-01** — this was previously written as "0.7
+is the largest value at which the guarantee holds" and "higher thresholds lose that
+guarantee", both of which are backwards.
 
 ### The central open risk
 
@@ -448,13 +455,15 @@ presupposes broad activation" still holds. 38.4% of *neutral* pairs sit in the
 high-H/high-R cell, so R still must be read behind a magnitude gate.
 
 **τ recommendation: τ_H = τ_R = 0.7.** At 0.9 the central harmful-invariant
-category has 6 pairs, which cannot carry a headline claim; and 0.7 is the only
-value where the log2/log3 = 0.63 bound argument holds. Not yet written into
-`config.py` pending the τ_D = 1e-3 sensitivity check.
+category has 6 pairs, which cannot carry a headline claim; 0.7 is the lowest round
+value clearing the log2/log3 = 0.63 bound, so it keeps the three-domain guarantee
+with the largest possible populations. (Every τ > 0.63 carries the guarantee — see
+§3. The earlier claim that 0.7 was "the only value where the bound holds" was
+wrong.) Not yet written into `config.py` pending the τ_D = 1e-3 sensitivity check.
 
 Per-class non-neutral counts (support ≥ 30, |D| > 1e-4) — note `dog` has both the
 most harmful pairs and the worst sketch accuracy, while `person` has 32 harmful
-pairs and 94.62% accuracy, so the relationship is not monotone (that is E10's job):
+pairs and 95.62% accuracy, so the relationship is not monotone (that is E10's job):
 
 | class | support | D>0 | D<0 |
 |---|---|---|---|
@@ -546,9 +555,23 @@ plan is `docs/EXPERIMENTS.md`; the written-up §5.1–5.6 plus a patch list is
    §3.6's unused sign-consistency score.
 5. Re-quote H/D/R for the concept grids in `analysis/` from the clean file; the
    folder names encode scores from the superseded file.
-6. Optional, one command each: `analyze_scores.py --tau-d 1e-3` for τ_D
-   sensitivity; mass-matched buckets if a reviewer challenges the R-vs-magnitude
-   conflation acknowledged in §5.4.
+6. ~~τ_D sensitivity~~ **done 2026-08-06** (`answer_critique.py --only q8`): τ_D is
+   a nuisance parameter (ratio 2.04/2.01/1.80 over 1e-5/1e-4/1e-3), but the
+   **support floor is load-bearing** — the §5.3 asymmetry runs 2.49 → 1.31 across
+   floors 10 → 100. Direction never inverts; magnitude does. Disclosed in §4.4.
+7. **E12a, the τ curve is not monotone** — deferred to the next draft, spec in
+   `docs/EXPERIMENTS.md` §10. The fine sweep shows a plateau at τ = 0.65–0.70 and a
+   turnover at τ = 0.95 (ratio 3.21 → 2.86), almost certainly because the harmful
+   denominator drops to single digits. **Handled for this draft by wording only** —
+   "strengthens monotonically" is gone from §1/§4.4/§5.3/§7 and Figure 6 shades the
+   thin region. No number changed. Confirm or truncate next time.
+8. **E14, support-stratified asymmetry** — the one open cheap experiment, spec in
+   `docs/EXPERIMENTS.md` §10. Harmful pairs are systematically thinner than
+   supportive ones and `R` is biased toward 0 at low support, so part of the §5.3
+   asymmetry may be a support artifact. Stratifying by support would convert §4.4's
+   disclosure into a control. Read-only, ~1 s.
+9. Mass-matched buckets if a reviewer challenges the R-vs-magnitude conflation
+   acknowledged in §5.4.
 
 ---
 

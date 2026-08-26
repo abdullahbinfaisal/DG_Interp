@@ -113,7 +113,7 @@ PACS_TRANSFORM = transforms.Compose([
 def Load_PACS_full(
 	domains: Optional[List[str]] = None,
 	batch_size: int = 64,
-	root_dir: str = r"C:\Users\sproj_ha\Desktop\DomainBed\domainbed\data\PACS",
+	root_dir: str = r"C:\Users\sproj_ha\Desktop\SGen_Vision_Interp\Vision_Interp\domainbed\data\PACS",
 	num_workers: int = 0,
 	preload_to_gpu: bool = False,
 ):
@@ -151,7 +151,7 @@ def Load_PACS_full(
 
 
 def Load_PACS(
-	root_dir: str = r"C:\Users\sproj_ha\Desktop\DomainBed\domainbed\data\PACS",
+	root_dir: str = r"C:\Users\sproj_ha\Desktop\SGen_Vision_Interp\Vision_Interp\domainbed\data\PACS",
 	domains: Optional[List[str]] = None,
 	batch_size: int = 64,
 	train_split: float = 0.8,

@@ -38,7 +38,10 @@ def extract_features(backbone, images):
             elif backbone.featurizer.__class__.__name__ == "ViT":
                 activations = backbone.featurizer.network.forward_features(images.to(device))[:, 1:, :]
             else:
-                activations = backbone.network[0](images.to(device))
+                # backbone.network[0] would also work for ERM/MMD/CORAL (network
+                # is Sequential(featurizer, classifier) there), but algorithms
+                # like DANN never set .network at all - only .featurizer.
+                activations = backbone.featurizer(images.to(device))
 
         if hasattr(backbone, 'forward_features'): # for models directly from the overcomplete library
             activations = backbone.forward_features(images.to(device))

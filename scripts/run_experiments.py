@@ -367,6 +367,26 @@ def main():
                            "mask only pairs with no measured effect in any source "
                            "domain; isolates dictionary denoising from structure")
 
+            # Does the support floor discard signal or noise? The excluded
+            # population carries 46.5% of the grid's |D| mass, 82% of it
+            # concentrated in these pairs at a per-pair magnitude comparable to
+            # the above-floor non-neutral set. Aggregate mass cannot settle
+            # whether that matters -- B4:inert_only is the standing proof that
+            # mass and consequence come apart -- so ablate them and look.
+            with rec.step("B4:below_floor_gated"):
+                run_bucket(buckets["below_floor_gated"], "B4_below_floor_gated",
+                           "B4",
+                           "mask the gated pairs the support floor excludes; "
+                           "tests directly whether a floor of 30 is discarding "
+                           "signal or discarding noise")
+
+            # The combined row masks both signs at once, and they cancel, so it
+            # is a lower bound. These two are the rows comparable to Table 3.
+            for nm in ("below_floor_harmful", "below_floor_supportive"):
+                with rec.step(f"B4:{nm}"):
+                    run_bucket(buckets[nm], f"B4_{nm}", "B4",
+                               f"sign-split of the excluded population: {nm}")
+
         # ---------------- B5 ----------------
         # Bounds the keep-only oracle. keep_robust_support retains only concepts
         # that support the true class, which deletes every competing-class

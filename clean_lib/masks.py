@@ -233,6 +233,32 @@ def build_buckets(
     add("inert_only", "R == 0 (no measured effect in any source domain)",
         scores.R == 0.0)
 
+    # The pairs the support floor excludes that could plausibly matter: thin
+    # support, but a gated effect and a nonzero R. 82% of all below-floor |D|
+    # mass sits here, at a mean per-pair magnitude comparable to the above-floor
+    # non-neutral population -- so they cannot be dismissed on magnitude.
+    #
+    # They are also a winner's-curse selection: choosing thin pairs BY their
+    # |D_hat| clearing a threshold preferentially picks the ones noise pushed
+    # up. Ablating them is the direct test of whether the floor at 30 is
+    # discarding signal or discarding noise, and it settles empirically what no
+    # argument about aggregate mass can. Not part of the typology; a diagnostic.
+    below_floor = (~sup) & (scores.R != 0.0)
+    add("below_floor_gated",
+        f"n(k,c) < {support_floor} and R != 0 and |D| > {tau_d:g}",
+        below_floor & (np.abs(D) > tau_d))
+
+    # Split by sign, because the combined bucket masks supportive and harmful
+    # pairs together and they move accuracy in opposite directions -- the net is
+    # a lower bound on both. Only the sign-split rows are comparable to the
+    # typology buckets in Table 3, which are all single-signed.
+    add("below_floor_harmful",
+        f"n(k,c) < {support_floor} and R != 0 and D < -{tau_d:g}",
+        below_floor & (D < -tau_d))
+    add("below_floor_supportive",
+        f"n(k,c) < {support_floor} and R != 0 and D > {tau_d:g}",
+        below_floor & (D > tau_d))
+
     return out
 
 

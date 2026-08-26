@@ -74,8 +74,8 @@ class SparseAEs():
         
 
     def save_checkpoint(self, save_path, flag):
-        run_name = f"{flag}_{self.checkpointManager.algorithm}_{self.checkpointManager.architecture}_T{''.join([str(e) for e in self.checkpointManager.testenvs])}"        
-        final_save_path = os.path.join(save_path, f"USAE_{run_name})")
+        run_name = f"{flag}_{self.checkpointManager.algorithm}_{self.checkpointManager.architecture}_T{''.join([str(e) for e in self.checkpointManager.testenvs])}"
+        final_save_path = os.path.join(save_path, f"USAE_{run_name}.pt")
         torch.save(self.SAEs, final_save_path)
         print(f"SAEs saved successfully to {final_save_path}")
 
@@ -86,10 +86,11 @@ class SparseAEs():
 
         if self.SAEs is None:
             self.SAEs = {}
+            normalizer_domains = [pacs_domains[e] for e in self.train_envs]
             for key in self.backbones.keys():
                 self.SAEs[key] = TopKSAE(self.feature_dim, nb_concepts=self.nb_concepts, top_k=self.topk, device="cuda")
                 self.SAEs[key].train()
-                self.SAEs[key].normalizer = Normalizer(self.backbones[key], "PACS")
+                self.SAEs[key].normalizer = Normalizer(self.backbones[key], "PACS", domains=normalizer_domains)
 
 
         for key in self.backbones.keys():    
@@ -196,4 +197,3 @@ class SparseAEs():
             # })
 
         self.save_checkpoint(save_path=save_dir, flag=flag)
-        wandb.finish()
