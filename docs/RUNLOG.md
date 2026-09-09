@@ -180,3 +180,168 @@ Harmful-invariant bucket size (high-H, high-R, D < -1e-4), which is paper 5.5's
 central category: **32 pairs at tau=0.7**, 18 at 0.8, 6 at 0.9. Only tau=0.7
 leaves a defensible population, and it is also the only value where the
 log2/log3 = 0.63 bound argument holds.
+
+---
+
+## 2026-08-26/27 — D1: MMD and DANN cross-backbone comparison
+
+Executes `docs/ABLATIONS_AND_EXPERIMENTS.md` T3.1 / `docs/DIRECTIONS.md` D1 — the
+paper's own named falsification test (§7): does an invariance-trained backbone
+(MMD, DANN) actually have fewer harmful-invariant concepts than ERM? Extended
+beyond D1's original MMD-only scope to include DANN, per user request. Full
+writeup of the result: `docs/RESULTS_LEDGER.md`.
+
+### Code added
+
+- `clean_lib/config.py` — `PRESETS["mmd_resnet_1800"]` (backbone_dir
+  `PACS_ResNet_Sketch_Test_Only/MMD_ResNet_T3`, ckpt 1800, the non-oracle top-1
+  over source envs) and `PRESETS["dann_resnet_5000"]` (same directory pattern,
+  ckpt 5000), each pointing at its own standalone (not tied-USAE) SAE.
+- `scripts/compare_backbones.py` — new, read-only (no model load, no GPU).
+  Loads each backbone's score file, tabulates bucket sizes via the existing
+  `build_buckets`, computes the "of high-H {supportive,harmful} pairs, also
+  high-R" asymmetry numbers, and runs `scipy.stats.fisher_exact` on
+  harmful-invariant and supportive-invariant retention between a reference
+  backbone and each other backbone. Writes
+  `results/W1_backbone_comparison.json`.
+
+### Code fixed — `Processor.dump()` read the score file in text mode
+
+`clean_lib/processors/processor.py`'s `dump()` opened the existing score file
+with `open(path, "r", encoding="utf-8")` before merging in new scores — the
+exact text-mode pattern CLAUDE.md already documents as producing spurious
+errors on this machine for 50MB+ files (why `inspect_scores.py` and
+`clean_lib/masks.py` both read as bytes instead). This one read site was never
+updated to match. It surfaced repeatedly while scoring DANN and MMD, as three
+different-looking exceptions on different runs — same failure class as the
+July session's "five distinct type-confusion failures, all non-deterministic,
+under heavy allocation churn", except this one has a fixable code-level
+contributor (`R.process()` calls `dump()` three times — `R`, `R_acts`,
+`R_counts` — so by the time R runs the file already has H and D merged in and
+is at its largest, making R's dump calls the ones most likely to trip it):
+
+    results/runs/20260826T120549Z_build_scores (DANN)  ValueError: Circular reference detected
+    results/runs/20260826T122324Z_build_scores (DANN)  TypeError: 'int' object is not iterable
+    results/runs/20260827T081353Z_build_scores (MMD)   TypeError: write() argument must be str, not cell
+
+Fix: read as bytes then decode, matching the pattern already used elsewhere —
+
+```python
+with builtins.open(path_obj, "rb") as fh:
+    data = json.loads(fh.read().decode("utf-8"))
+```
+
+### DANN SAE training
+
+Two early attempts failed on a wrong PACS path
+(`results/runs/20260819T095754Z_train_sae`, `...095920Z`); a third
+(`...135131Z`) failed with `AttributeError: 'DANN' object has no attribute
+'network'` — DANN algorithm objects don't expose `.network` the way ERM/MMD do.
+Fixed and retrained by the user; succeeded 2026-08-26
+(`results/runs/20260826T103022Z_train_sae`, 3049s elapsed): `ckpt=5000`,
+`train_envs=[0,1,2]`, `feature_dim=2048 topk=16 nb_concepts=16384 w=7`, output
+`SAEs/DANN_ResNet_T3/USAE_ckpt5000_DANN_ResNet_T3.pt`, matching the
+`dann_resnet_5000` preset above.
+
+### Score files
+
+Both backbones scored with `--only H` / `--only D` / `--only R` as three
+separate process invocations (per-stage resumability against the crash above;
+`--force` required from the second call on since the file already exists).
+
+- `processed/FINAL_MMD_ResNet_1800_T3.json` — final successful run
+  `results/runs/20260827T083857Z_build_scores`.
+- `processed/FINAL_DANN_ResNet_5000_T3.json` — final successful run
+  `results/runs/20260827T082226Z_build_scores`.
+
+Both integrity-checked with `inspect_scores.py`: `R_acts` length 3
+(source-domains-only, correct), zero `R == -1` legacy sentinels.
+
+### B1–B5 for both backbones
+
+Run into separate `--out-dir` (`results/mmd`, `results/dann`) so as not to
+overwrite ERM's `results/summary.csv`. B1 passed for both — SAE reconstruction
+within ~0.4–0.5pp of the original backbone on every domain, comparable in
+magnitude to ERM's own reconstruction check. B2–B5 replicated the paper's
+central causal asymmetry in both backbones: masking harmful buckets recovers
+sketch accuracy and beats matched random controls by double-digit margins;
+masking supportive buckets collapses it and the control moves the opposite
+direction.
+
+### Cross-backbone comparison
+
+`scripts/compare_backbones.py` first attempt
+(`results/runs/20260827T083125Z_compare_backbones`) failed `KeyError:
+'R_acts'` against a DANN score file whose R stage hadn't yet completed
+successfully (see the dump() bug above). Final run
+`results/runs/20260827T102151Z_compare_backbones` →
+`results/W1_backbone_comparison.json`. Headline result — the harmful-invariant
+Fisher exact test, ERM vs. MMD: p=0.048, MMD's rate significantly *higher*
+(51.7% vs. 36.0%); ERM vs. DANN: p=0.372, not significant. Neither alignment
+objective reduces the paper's central bucket; MMD significantly increases it.
+Full result and interpretation: `docs/RESULTS_LEDGER.md`.
+
+### Checkpoint-selection sanity check
+
+Verified directly from `out.txt` (parsed programmatically, not hand-read,
+given DANN's log changes header mid-file — an extra `disc_loss` column
+appears from step 300 onward): both `mmd_resnet_1800` and `dann_resnet_5000`
+are genuine non-oracle selections (top-1 mean accuracy over source envs
+[0,1,2] only, matching ERM's own selection protocol). For both backbones the
+non-oracle pick also happens to be the oracle-best checkpoint (envs
+[0,1,2,3]) — MMD step 1800: non-oracle mean 0.9663, oracle mean 0.9355, both
+top-1; DANN step 5000: non-oracle mean 0.9768, oracle mean 0.9406, both
+top-1. No leakage, and no "picked a weaker checkpoint by not looking at the
+target" concern either.
+
+---
+
+## 2026-08-27 — D7: does R carry information beyond D's magnitude?
+
+Executes `docs/DIRECTIONS.md` D7, revised per its own design caveat: match the
+per-pair |D| **distribution** (as `stratified_random_control` already does),
+not just the total mass, per `docs/DISCUSSION.md` §5's point that aggregate
+mass is a poor predictor of consequence. Run across all three backbones (ERM,
+MMD, DANN) rather than ERM alone, since scoring infrastructure for all three
+already existed from the D1 work above. Full result and interpretation:
+`docs/RESULTS_LEDGER.md` F2.
+
+### Code added
+
+- `clean_lib/masks.py` — extracted the quantile-binning core already used by
+  `stratified_random_control` into a shared `_quantile_matched_indices()`
+  helper (no behavior change to that function), then added
+  `distribution_matched_subset(target, pool, scores, seed)`: draws a
+  same-size, same-|D|-shape subset from a *named* candidate bucket (not
+  "everything not in target," like the existing control) — e.g. matching
+  `S-_hi`'s profile out of the `S-_lo` pool, so masking the matched subset and
+  masking the true bucket differ only in R, not in effect size.
+- `scripts/run_experiments.py` — new `--stage E3E4`. Two comparisons per
+  backbone: harmful (target=`S-_hi`, pool=`S-_lo`, since harm is enriched at
+  low R) and supportive (target=`S+_lo`, pool=`S+_hi`, direction reversed
+  since `S+_lo`'s mass is below `S+_hi`'s in every class). 3 seeds each,
+  reusing the existing `run_bucket`/summary.csv machinery unchanged. `S-_hi`,
+  `S-_lo`, `S+_hi`, `S+_lo` themselves were already masked and recorded by B2
+  for all three backbones, so only the 6 new matched-subset configs per
+  backbone needed running.
+
+### Runs
+
+    python scripts\run_experiments.py --stage E3E4 --preset erm_resnet_3300  --scores processed\FINAL_ERM_ResNet_3300_T3.json   --out-dir results
+    python scripts\run_experiments.py --stage E3E4 --preset mmd_resnet_1800  --scores processed\FINAL_MMD_ResNet_1800_T3.json   --out-dir results\mmd
+    python scripts\run_experiments.py --stage E3E4 --preset dann_resnet_5000 --scores processed\FINAL_DANN_ResNet_5000_T3.json  --out-dir results\dann
+
+All 18 configs (6 per backbone) succeeded on first attempt — no retries, unlike
+the D1 scoring runs above (this stage does no fresh forward-pass scoring, only
+masked-accuracy evaluation against already-built score files).
+
+### Result
+
+Harmful side: true `S-_hi` recovers 2.3–5.5x more sketch accuracy than a
+magnitude-matched low-R subset of `S-_lo`, in all three backbones (ERM +3.68
+vs +1.32; MMD +2.51 vs +1.07; DANN +2.46 vs +0.45). Supportive side: matched
+subset costs 8–10x more than the true `S+_lo` in ERM and MMD (consistent with
+the harmful-side story); DANN inverted (-18.77 true vs -1.15 matched) but the
+matcher only found 30 of 74 needed pairs per-class, so this one is flagged as
+unresolved rather than a clean contradiction. Full numbers and the DANN
+coverage caveat: `docs/RESULTS_LEDGER.md` F2.

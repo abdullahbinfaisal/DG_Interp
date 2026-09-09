@@ -5,7 +5,7 @@ from domainbed.algorithms import DANN, CORAL, Mixup, MMD, IRM, ERM, SagNet
 algo_classes = {"DANN": DANN, "CORAL": CORAL, "Mixup": Mixup, "MMD": MMD, "IRM": IRM, "ERM": ERM, "SagNet": SagNet}
 device = torch.device("cuda") if torch.cuda.is_available() else "cpu"
 from domainbed.networks import Identity
-from clean_lib.data import pacs_envs
+from clean_lib.data import pacs_envs, DATASET_DOMAINS
 
 import warnings
 warnings.filterwarnings("ignore", category=UserWarning)
@@ -17,11 +17,18 @@ class CheckpointManager():
         
         super().__init__()
         self.directory = directory
+        self.dataset = dataset
         self.name = Path(self.directory).name
         self.algorithm, self.architecture, split = self.name.split("_")
+        self.testenvs = [int(x) for x in split[1:]]
         if dataset == "PACS":
             self.trainenvs = pacs_envs[split]
-        self.testenvs = [int(x) for x in split[1:]]
+        else:
+            # VLCS / OfficeHome: no per-dataset envs table (unlike pacs_envs)
+            # because none is needed - train envs are just "every domain that
+            # isn't held out", derived from DATASET_DOMAINS' domain count.
+            num_domains = len(DATASET_DOMAINS[dataset])
+            self.trainenvs = [e for e in range(num_domains) if e not in self.testenvs]
 
     def load_checkpoints(self, checkpoints: list[int]):
         models = {}

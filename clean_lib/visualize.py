@@ -17,10 +17,10 @@ torch.cuda.empty_cache()
 
 
 dirs = {
-    "art_painting"  : r"C:\Users\sproj_ha\Desktop\DomainBed\domainbed\data\PACS\art_painting",
-    "sketch"        : r"C:\Users\sproj_ha\Desktop\DomainBed\domainbed\data\PACS\sketch",
-    "photo"         : r"C:\Users\sproj_ha\Desktop\DomainBed\domainbed\data\PACS\photo",
-    "cartoon"       : r"C:\Users\sproj_ha\Desktop\DomainBed\domainbed\data\PACS\cartoon",
+    "art_painting"  : r"C:\Users\sproj_ha\Desktop\SGen_Vision_Interp\Vision_Interp\domainbed\data\PACS\art_painting",
+    "sketch"        : r"C:\Users\sproj_ha\Desktop\SGen_Vision_Interp\Vision_Interp\domainbed\data\PACS\sketch",
+    "photo"         : r"C:\Users\sproj_ha\Desktop\SGen_Vision_Interp\Vision_Interp\domainbed\data\PACS\photo",
+    "cartoon"       : r"C:\Users\sproj_ha\Desktop\SGen_Vision_Interp\Vision_Interp\domainbed\data\PACS\cartoon",
 }
 
 _TRANSFORM = transforms.Compose([

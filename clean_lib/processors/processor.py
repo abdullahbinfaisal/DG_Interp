@@ -198,9 +198,12 @@ class Processor:
         path_obj = Path(self.file_path)
         path_obj.parent.mkdir(parents=True, exist_ok=True)
 
-        # Load existing JSON safely.
-        with builtins.open(path_obj, "r", encoding="utf-8") as fh:
-            data = json.load(fh)
+        # Load existing JSON safely. Read as bytes then decode, not text mode:
+        # text-mode reads of these 50MB+ files have produced spurious
+        # JSONDecodeErrors on this machine (see CLAUDE.md), which is exactly
+        # the failure this method needs to avoid mid-merge.
+        with builtins.open(path_obj, "rb") as fh:
+            data = json.loads(fh.read().decode("utf-8"))
 
         # Overwrite this score name for every pair, leaving other scores intact.
         for cls_idx in range(self.classes):

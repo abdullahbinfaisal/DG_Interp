@@ -95,6 +95,103 @@ class MaskedAccuracyEvaluator:
         self._validate_mask(concept_mask)
         return self._evaluate(mode="sae", concept_mask=concept_mask)
 
+    def evaluate_posteriors(self, domain: str, concept_mask: Optional[torch.Tensor] = None):
+        """
+        Per-image softmax posteriors for one domain, through the SAE, with an
+        optional 1-D concept mask applied uniformly to every image -- NOT keyed
+        by each image's own true label, unlike the 2-D mask path elsewhere in
+        this class. For label-free / any-class-conditioned experiments
+        (docs/DIRECTIONS.md W2/D4) where the mask's conditioning class need not
+        be the image's true label, e.g. testing what happens if every image in
+        the batch is masked "as if" it belonged to some class k.
+
+        Returns (probs, y): probs is (N, classes) softmax output, y is (N,)
+        true labels, in the domain's deterministic (Load_PACS_full) image
+        order -- so results from separate calls with different masks are
+        index-aligned and can be compared/subtracted directly.
+        """
+        if concept_mask is not None:
+            self._validate_mask(concept_mask)
+            if concept_mask.ndim != 1:
+                raise ValueError(
+                    "evaluate_posteriors only supports a 1-D mask (the same "
+                    "concepts zeroed for every image); a 2-D mask would be "
+                    "keyed by each image's true label, defeating the point "
+                    "of a label-free / any-class-conditioned evaluation."
+                )
+            concept_mask = concept_mask.to(device)
+
+        all_probs, all_y = [], []
+        for x, y in tqdm(self._loader(domain), desc=f"posteriors[{domain}]", leave=False):
+            x, y = x.to(device), y.to(device)
+            n = x.size(0)
+            with torch.no_grad():
+                logits = self._sae_forward(x, n, concept_mask, is_2d=False, y=y)
+                all_probs.append(F.softmax(logits, dim=1).cpu())
+                all_y.append(y.cpu())
+
+        return torch.cat(all_probs, dim=0), torch.cat(all_y, dim=0)
+
+    def evaluate_posteriors_indexed(
+        self, domain: str, mask_table: torch.Tensor, mask_id: torch.Tensor
+    ):
+        """
+        Per-image softmax posteriors for one domain, with a PER-IMAGE concept
+        mask selected from `mask_table` by `mask_id[i]` -- distinct from both
+        evaluate_posteriors()'s single shared mask and evaluate_masked()'s
+        true-label-keyed 2-D mask. For experiments where the masking class (or
+        the concept SET) varies per image based on some model-derived
+        quantity -- e.g. each image's own top-1/top-2 predicted-class pair --
+        not the true label and not one fixed class for the whole domain.
+
+        mask_table: (M, nb_concepts) bool -- M distinct concept masks.
+        mask_id: (N,) long, in the domain's deterministic (Load_PACS_full)
+          image order -- mask_id[i] indexes into mask_table for image i.
+
+        Returns (probs, y), same convention as evaluate_posteriors().
+        """
+        if mask_table.dtype != torch.bool or mask_table.ndim != 2 or mask_table.shape[1] != self.nb_concepts:
+            raise ValueError(f"mask_table must be a bool (M, {self.nb_concepts}) tensor")
+        if mask_id.ndim != 1:
+            raise ValueError("mask_id must be 1-D")
+        mask_table = mask_table.to(device)
+        mask_id = mask_id.to(device)
+
+        all_probs, all_y = [], []
+        offset = 0
+        for x, y in tqdm(self._loader(domain), desc=f"posteriors[indexed:{domain}]", leave=False):
+            x, y = x.to(device), y.to(device)
+            n = x.size(0)
+            batch_id = mask_id[offset:offset + n]
+            offset += n
+            with torch.no_grad():
+                logits = self._sae_forward_indexed(x, n, mask_table, batch_id)
+                all_probs.append(F.softmax(logits, dim=1).cpu())
+                all_y.append(y.cpu())
+
+        return torch.cat(all_probs, dim=0), torch.cat(all_y, dim=0)
+
+    def _sae_forward_indexed(self, x, n, mask_table, batch_id):
+        """Same encode/decode path as _sae_forward, but the concept set zeroed
+        for each image is looked up per-image from `mask_table[batch_id]`
+        rather than being one mask shared by the whole batch or 2-D-keyed by
+        true label."""
+        z_raw = extract_features(self.backbone, x)
+        z_norm = self.sae.normalizer(z_raw)
+        _, _, h, w = z_norm.shape
+
+        z_flat = rearrange(z_norm, "n c h w -> (n h w) c")
+        _, z_sae = self.sae.encode(z_flat)
+
+        per_token = mask_table[batch_id].repeat_interleave(h * w, dim=0)
+        z_sae = z_sae * (~per_token).to(z_sae.dtype)
+
+        z_recon = rearrange(
+            self.sae.decode(z_sae), "(n h w) c -> n c h w", n=n, h=h, w=w
+        )
+        z_recon = self.sae.normalizer.denormalize(z_recon)
+        return self._classify(z_recon)
+
     def _validate_mask(self, concept_mask: torch.Tensor) -> None:
         if concept_mask.dtype != torch.bool:
             raise TypeError("concept_mask must be a boolean tensor")

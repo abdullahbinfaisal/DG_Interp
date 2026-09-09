@@ -3,43 +3,27 @@
 Each entry: the **hypothesis**, why the existing results motivate it, the
 **investigation** that would settle it, what each outcome would mean, and cost.
 
-Ordered by value per unit of effort. D1–D5 are cheap and would each add a real
+Ordered by value per unit of effort. D2–D5 are cheap and would each add a real
 claim; D6–D8 are the expensive ones that would most strengthen the paper.
 
 Companion: `docs/DISCUSSION.md` for what is already established.
+`docs/RESULTS_LEDGER.md` for findings settled after the ERM-only draft (D1 has
+moved there — see its note below).
 Method specs for previously-defined experiments live in `EXPERIMENTS.md` §10.
 
 ---
 
-## D1. Does an invariance-trained model actually have fewer harmful-invariant concepts?
-
-**Hypothesis.** MMD, CORAL and similar objectives explicitly align feature
-distributions across domains. If our argument is right — that harmful-invariant
-concepts are invisible to activation-level criteria — then an MMD-trained model
-should have **as many or more** harmful-invariant pairs than ERM, not fewer, despite
-being optimised for alignment.
-
-**Why the current results motivate it.** This is the paper's thesis stated as a
-falsifiable prediction, and right now the thesis rests on an argument
-(*"alignment has no gradient to apply to already-aligned concepts"*) rather than a
-measurement. `PACS_ResNet_Sketch_Test_Only/MMD_ResNet_T3` is already on disk.
-
-**Investigation.** Train an SAE on the MMD backbone (`SparseAEs`, 250 epochs,
-~2–3 h), score H/D/R on source domains, and compare: harmful-invariant bucket size,
-the §5.3 support/harm asymmetry ratio, and error recovery from masking `S−_hi`.
-Ideally train it as a *tied* USAE spanning the ERM and MMD checkpoints so the
-dictionaries are aligned by construction and individual latents are comparable —
-which `sae.py` already supports and which would be a stronger comparison than any
-independently-trained pair.
-
-**Outcomes.** MMD has comparably many harmful-invariant pairs → the paper's central
-argument is demonstrated, not merely asserted, and this becomes the headline
-experiment. MMD has materially fewer → alignment *does* partially address them and
-§2/§6 need rewriting to a weaker claim. Either result is publishable; the first is
-much stronger.
-
-**Cost.** One SAE training run plus one scoring run. The single highest-value
-experiment available.
+**D1 — settled, moved to `docs/RESULTS_LEDGER.md` F1.** *Does an
+invariance-trained model actually have fewer harmful-invariant concepts?*
+Measured 2026-08-26/27 across two alignment objectives (MMD, DANN), extending
+D1's original MMD-only scope. Neither reduces the harmful-invariant bucket;
+MMD retains significantly more of it (p=0.048), DANN's lower raw count is not
+statistically distinguishable from ERM's rate (p=0.372). The paper's central
+argument is demonstrated, not merely asserted. See the ledger for the full
+result, the mechanistic argument for why it generalizes, and the scope limits
+(aggregate-level only, independently-trained SAEs not a tied USAE) — and
+`docs/DIRECTIONS.md` D7 below, whose priority this result raises rather than
+lowers.
 
 ---
 
@@ -192,33 +176,19 @@ correlation, and the paper gains its most concrete causal story. Not supported �
 
 ---
 
-## D7. Does R carry information beyond the sign and magnitude of D?
-
-**Hypothesis.** Consistency is not merely correlated with harm.
-
-**Why it is open.** `DISCUSSION.md` §10. The harmful population is ~2× enriched in
-low-R, and the keep-only comparison conflates R with mass (robust support holds ~10×
-`S+_lo`'s mass). This is why §5.3 is descriptive.
-
-**Investigation.** E3/E4 mass-matched buckets, `EXPERIMENTS.md` §10. Note the
-direction constraint A5 established: `S+_lo`'s mass is below `S+_hi`'s in **every**
-class, so the supportive match must subset `S+_hi` **down** to `S+_lo`'s mass.
-
-**Caveat that changes the design.** `DISCUSSION.md` §5 shows aggregate |D| mass is a
-poor predictor of consequence — 111,530 pairs with mass 0.069 recover 0.6% of errors
-while 35 pairs with mass 0.087 recover 25.1%. So a mass-matched comparison may be a
-weaker instrument than it appears. Matching the *per-pair magnitude distribution*,
-as `stratified_random_control` already does, is the more meaningful match, and the
-mass-matched design should be revised accordingly rather than implemented as
-originally specified.
-
-**Outcomes.** Low-R subset wins at matched mass → R is earned as an independent
-axis and §5.3 can make a causal claim. Equal → §5.3 stays descriptive, which costs
-the paper nothing as currently written.
-
-**Cost.** ~60 lines for the matched-subset selector, then ~12 configurations.
-Worth doing only if a reviewer challenges §5.3, or if D1 comes back positive and the
-paper needs the stronger version.
+**D7 — settled, moved to `docs/RESULTS_LEDGER.md` F2.** *Does R carry
+information beyond the sign and magnitude of D?* Measured 2026-08-27 via a
+distribution-matched subset selector (not the sum-matched design originally
+sketched below — see the ledger for why), across all three backbones. On the
+harmful side: yes, consistently, 3/3 backbones — the true high-R harmful
+bucket recovers 2.3–5.5× more accuracy than a magnitude-matched low-R subset
+of the same size. On the supportive side: yes in ERM and MMD (matched subset
+costs 8–10× more than the true low-R bucket), but DANN's comparison inverted
+and was undercovered (30 of 74 pairs matched) — flagged as unresolved rather
+than papered over. This directly contradicts the paper's standing §10 hedge
+("we do not claim R carries information independent of D's sign and
+magnitude") on the harmful side. See the ledger for full numbers and the
+DANN caveat.
 
 ---
 

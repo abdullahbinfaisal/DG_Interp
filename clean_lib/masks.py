@@ -313,6 +313,57 @@ def keep_only_random_control(
     )
 
 
+def _quantile_matched_indices(
+    tgt_absd: np.ndarray,
+    cand_idx: np.ndarray,
+    cand_absd: np.ndarray,
+    want: int,
+    n_bins: int,
+    rng: np.random.Generator,
+) -> List[int]:
+    """
+    Core of the |D|-distribution match shared by `stratified_random_control` and
+    `distribution_matched_subset`: bin the target's own |D| quantiles, draw
+    `want` candidates from `cand_idx` matching that bin shape, and top up any
+    shortfall with the closest available |D| to the target's median so the size
+    match is exact even when a bin is underpopulated. Callers differ only in how
+    `cand_idx`/`cand_absd` (the candidate pool) is defined.
+    """
+    qs = np.linspace(0.0, 1.0, n_bins + 1)
+    edges = np.unique(np.quantile(tgt_absd, qs))
+    if edges.size < 2:
+        edges = np.array([tgt_absd.min(), tgt_absd.max() + 1e-30])
+
+    tgt_bin = np.clip(np.digitize(tgt_absd, edges[1:-1]), 0, len(edges) - 2)
+    cand_bin = np.clip(np.digitize(cand_absd, edges[1:-1]), 0, len(edges) - 2)
+
+    chosen: List[int] = []
+    used = np.zeros(cand_idx.size, dtype=bool)
+
+    for b in range(len(edges) - 1):
+        need = int((tgt_bin == b).sum())
+        if need == 0:
+            continue
+        pool = np.flatnonzero((cand_bin == b) & ~used)
+        take = min(need, pool.size)
+        if take:
+            picked = rng.choice(pool, size=take, replace=False)
+            used[picked] = True
+            chosen.extend(cand_idx[picked].tolist())
+
+    shortfall = want - len(chosen)
+    if shortfall > 0:
+        remaining = np.flatnonzero(~used)
+        if remaining.size:
+            target_median = float(np.median(tgt_absd))
+            order = remaining[np.argsort(np.abs(cand_absd[remaining] - target_median))]
+            picked = order[:shortfall]
+            used[picked] = True
+            chosen.extend(cand_idx[picked].tolist())
+
+    return chosen
+
+
 def stratified_random_control(
     target: Bucket,
     scores: Scores,
@@ -351,47 +402,69 @@ def stratified_random_control(
         tgt_absd = absd[k, tgt_idx]
         cand_absd = absd[k, cand_idx]
 
-        # Bin edges from the target's own |D| quantiles.
-        qs = np.linspace(0.0, 1.0, n_bins + 1)
-        edges = np.unique(np.quantile(tgt_absd, qs))
-        if edges.size < 2:
-            edges = np.array([tgt_absd.min(), tgt_absd.max() + 1e-30])
-
-        tgt_bin = np.clip(np.digitize(tgt_absd, edges[1:-1]), 0, len(edges) - 2)
-        cand_bin = np.clip(np.digitize(cand_absd, edges[1:-1]), 0, len(edges) - 2)
-
-        chosen: List[int] = []
-        used = np.zeros(cand_idx.size, dtype=bool)
-
-        for b in range(len(edges) - 1):
-            need = int((tgt_bin == b).sum())
-            if need == 0:
-                continue
-            pool = np.flatnonzero((cand_bin == b) & ~used)
-            take = min(need, pool.size)
-            if take:
-                picked = rng.choice(pool, size=take, replace=False)
-                used[picked] = True
-                chosen.extend(cand_idx[picked].tolist())
-
-        # Top up any shortfall with the closest available |D|, so the size match
-        # is exact even when a bin is underpopulated.
-        shortfall = want - len(chosen)
-        if shortfall > 0:
-            remaining = np.flatnonzero(~used)
-            if remaining.size:
-                target_median = float(np.median(tgt_absd))
-                order = remaining[np.argsort(np.abs(cand_absd[remaining] - target_median))]
-                picked = order[:shortfall]
-                used[picked] = True
-                chosen.extend(cand_idx[picked].tolist())
-
+        chosen = _quantile_matched_indices(tgt_absd, cand_idx, cand_absd, want, n_bins, rng)
         select[k, np.array(chosen, dtype=int)] = True
 
     return _bucket(
         name=f"random_ctrl[{target.name}]seed{seed}",
         definition=(f"size- and |D|-stratified random control matched to "
                     f"{target.name} (seed {seed})"),
+        select=select,
+        scores=scores,
+    )
+
+
+def distribution_matched_subset(
+    target: Bucket,
+    pool: Bucket,
+    scores: Scores,
+    seed: int,
+    n_bins: int = 10,
+) -> Bucket:
+    """
+    D7 (docs/DIRECTIONS.md): does R carry information beyond the sign and
+    magnitude of D? A size- and |D|-distribution-matched subset of `pool`,
+    matched to `target`'s per-class |D| profile.
+
+    Unlike `stratified_random_control` (whose candidate pool is "everything not
+    in target"), the candidate pool here is a specific named bucket with the
+    opposite R -- e.g. matching S-_hi's |D| profile with a same-size,
+    same-shape subset of S-_lo, so that masking the matched subset and masking
+    S-_hi itself differ only in R, not in how much or how concentrated the
+    effect is. Comparing the two isolates whether R does causal work beyond
+    magnitude. `target` and `pool` are assumed already support-floored, since
+    both come from `build_buckets()`.
+
+    Direction depends on which side is larger per class: for the harmful
+    comparison (E3), S-_lo is the larger pool (harm is enriched at low R), so
+    `pool=S-_lo, target=S-_hi`. For the supportive comparison (E4), S+_lo's
+    mass is below S+_hi's in every class, so the match runs the other way:
+    `pool=S+_hi, target=S+_lo`.
+    """
+    rng = np.random.default_rng(seed)
+    absd = np.abs(scores.D)
+    select = np.zeros_like(target.select, dtype=bool)
+
+    for k in range(scores.n_classes):
+        tgt_idx = np.flatnonzero(target.select[k])
+        if tgt_idx.size == 0:
+            continue
+
+        cand_idx = np.flatnonzero(pool.select[k])
+        if cand_idx.size == 0:
+            continue
+
+        want = min(tgt_idx.size, cand_idx.size)
+        tgt_absd = absd[k, tgt_idx]
+        cand_absd = absd[k, cand_idx]
+
+        chosen = _quantile_matched_indices(tgt_absd, cand_idx, cand_absd, want, n_bins, rng)
+        select[k, np.array(chosen, dtype=int)] = True
+
+    return _bucket(
+        name=f"matched[{pool.name}->{target.name}]seed{seed}",
+        definition=(f"size- and |D|-distribution-matched subset of {pool.name} "
+                    f"to {target.name}'s profile (seed {seed}) -- D7"),
         select=select,
         scores=scores,
     )

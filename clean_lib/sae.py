@@ -4,7 +4,7 @@ from tqdm import tqdm
 import torch.nn as nn
 from einops import rearrange
 from overcomplete import TopKSAE
-from clean_lib.data import Load_PACS, pacs_domains
+from clean_lib.data import Load_PACS, pacs_domains, DATASET_DOMAINS, Load_Dataset
 from clean_lib.utils import extract_features
 from torch.optim.lr_scheduler import SequentialLR, LinearLR, CosineAnnealingLR
 
@@ -24,10 +24,12 @@ class Normalizer(nn.Module):
         self.dataset = dataset
         if self.dataset == "PACS":
             dl, _ = Load_PACS(domains=domains, batch_size=1024)
-            x, _ = next(iter(dl))
-            
-            model.to(device)
-            activations = extract_features(model, x.to(self.device))
+        else:
+            dl, _ = Load_Dataset(dataset=self.dataset, domains=domains, batch_size=1024)
+        x, _ = next(iter(dl))
+
+        model.to(device)
+        activations = extract_features(model, x.to(self.device))
 
         flat = activations.flatten()
         
@@ -46,7 +48,7 @@ class Normalizer(nn.Module):
 
 
 class SparseAEs():
-    def __init__(self, feature_dim, topk, nb_concepts, rearrange_string, checkpointManager, train_envs, w):
+    def __init__(self, feature_dim, topk, nb_concepts, rearrange_string, checkpointManager, train_envs, w, dataset="PACS"):
         self.topk = topk
         self.feature_dim = feature_dim
         self.nb_concepts = nb_concepts
@@ -56,6 +58,7 @@ class SparseAEs():
         self.backbones = checkpointManager.get_models()
         self.SAEs = None
         self.w = w
+        self.dataset = dataset
 
     def get_sae(self, ckpt):
         return self.SAEs[ckpt]
@@ -86,11 +89,11 @@ class SparseAEs():
 
         if self.SAEs is None:
             self.SAEs = {}
-            normalizer_domains = [pacs_domains[e] for e in self.train_envs]
+            normalizer_domains = [DATASET_DOMAINS[self.dataset][e] for e in self.train_envs]
             for key in self.backbones.keys():
                 self.SAEs[key] = TopKSAE(self.feature_dim, nb_concepts=self.nb_concepts, top_k=self.topk, device="cuda")
                 self.SAEs[key].train()
-                self.SAEs[key].normalizer = Normalizer(self.backbones[key], "PACS", domains=normalizer_domains)
+                self.SAEs[key].normalizer = Normalizer(self.backbones[key], self.dataset, domains=normalizer_domains)
 
 
         for key in self.backbones.keys():    
@@ -107,8 +110,9 @@ class SparseAEs():
         self.criterion = nn.L1Loss(reduction="mean")  
 
 
-    def train(self, flag="USAE", epochs=250, batch_size=64, full_data_gpu=True, save_dir="./SAEs", dataset="PACS"):
-        
+    def train(self, flag="USAE", epochs=250, batch_size=64, full_data_gpu=True, save_dir="./SAEs", dataset=None):
+        dataset = dataset or self.dataset
+
         run_name = f"{flag}_{self.checkpointManager.algorithm}_{self.checkpointManager.architecture}_T{''.join([str(e) for e in self.checkpointManager.testenvs])}"
         
         # wandb.init(
@@ -128,6 +132,13 @@ class SparseAEs():
 
         if dataset == "PACS":
             train_dl, test_dl = Load_PACS(domains=[pacs_domains[e] for e in self.train_envs], batch_size=batch_size, drop_last=True)
+        else:
+            train_dl, test_dl = Load_Dataset(
+                dataset=dataset,
+                domains=[DATASET_DOMAINS[dataset][e] for e in self.train_envs],
+                batch_size=batch_size,
+                drop_last=True,
+            )
 
 
         rotator = 0

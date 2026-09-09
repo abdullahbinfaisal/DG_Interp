@@ -5,13 +5,24 @@ Uses clean_lib.sae.SparseAEs — the current, correct trainer (source-envs-only
 Normalizer, tied-checkpoint decode loss). SAE_Train_V2.py is superseded: it
 imports lib.gpu_pacs / lib.loaders, which no longer match this repo.
 
+Supports PACS, VLCS and OfficeHome via --dataset (default PACS). VLCS and
+OfficeHome share PACS's domain/class/*.jpg folder layout, so only the domain
+name/root-dir tables in clean_lib.data (DATASET_DOMAINS / DATASET_ROOTS) differ
+per dataset — no other lib code is dataset-specific.
+
 Checkpoint selection mirrors build_scores.py / CheckpointManager: ranked by
-mean env{0,1,2}_out_acc from out.txt (non-oracle, source-domains-only). Pass
---ckpt to override with a specific step.
+mean out_acc over the backbone's own declared train envs from out.txt
+(non-oracle, source-domains-only). Pass --ckpt to override with a specific
+step. --train-envs defaults to the backbone's declared train envs (everything
+but its held-out test env(s), parsed from the "..._T<digits>" directory name)
+and is validated to never include a held-out env, whatever it is for this
+dataset/backbone.
 
 Canonical invocation (PowerShell, from repo root, interpretability env active):
 
   python scripts\train_sae.py --backbone-dir PACS_ResNet_Sketch_Test_Only\MMD_ResNet_T3 --save-dir SAEs\MMD_ResNet_T3
+  python scripts\train_sae.py --dataset VLCS --backbone-dir VLCS_ResNet_T3 --save-dir SAEs\VLCS_ERM_ResNet_T3
+  python scripts\train_sae.py --dataset OfficeHome --backbone-dir OfficeHome_ResNet_T1 --save-dir SAEs\OfficeHome_ERM_ResNet_T1
 
 Smoke test first (~1-2 min, result is NOT valid):
 
@@ -34,12 +45,16 @@ from clean_lib.sae import SparseAEs
 
 def parse_args():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("--dataset", choices=["PACS", "VLCS", "OfficeHome"], default="PACS",
+                    help="which dataset the backbone was trained on")
     p.add_argument("--backbone-dir", required=True,
                     help=r"e.g. PACS_ResNet_Sketch_Test_Only\MMD_ResNet_T3")
     p.add_argument("--ckpt", type=int, default=None,
                     help="override the auto-selected checkpoint step")
-    p.add_argument("--train-envs", type=int, nargs="+", default=[0, 1, 2],
-                    help="envs to train the SAE on; must exclude the held-out target")
+    p.add_argument("--train-envs", type=int, nargs="+", default=None,
+                    help="envs to train the SAE on; must exclude the held-out target(s). "
+                         "Defaults to the backbone's own declared train envs "
+                         "(parsed from its directory name).")
     p.add_argument("--feature-dim", type=int, default=2048)
     p.add_argument("--topk", type=int, default=16)
     p.add_argument("--nb-concepts", type=int, default=2048 * 8)
@@ -60,24 +75,28 @@ def parse_args():
 def main():
     args = parse_args()
 
-    if 3 in args.train_envs:
-        raise SystemExit(
-            "train_envs includes env 3 (sketch), the held-out target domain. "
-            "The SAE must never be trained on it."
-        )
-
     save_dir = Path(args.save_dir)
     save_dir.mkdir(parents=True, exist_ok=True)
 
-    manager = CheckpointManager(directory=args.backbone_dir)
-    print(f"[ckpt] algorithm={manager.algorithm} arch={manager.architecture} "
+    manager = CheckpointManager(directory=args.backbone_dir, dataset=args.dataset)
+    print(f"[ckpt] dataset={args.dataset} algorithm={manager.algorithm} arch={manager.architecture} "
           f"train_envs={manager.trainenvs} test_envs={manager.testenvs}")
+
+    train_envs = args.train_envs if args.train_envs is not None else manager.trainenvs
+    leaked = [e for e in train_envs if e in manager.testenvs]
+    if leaked:
+        raise SystemExit(
+            f"--train-envs {train_envs} includes held-out test env(s) {leaked} "
+            f"(backbone_dir {args.backbone_dir!r} declares test_envs={manager.testenvs}). "
+            "The SAE must never be trained on the held-out target domain."
+        )
+    args.train_envs = train_envs
 
     if args.ckpt is not None:
         ckpt = args.ckpt
         print(f"[ckpt] using --ckpt override: step {ckpt}")
     else:
-        top_steps, accs = manager.get_top_k_checkpoints(envs=[0, 1, 2], k=1)
+        top_steps, accs = manager.get_top_k_checkpoints(envs=manager.trainenvs, k=1)
         if not top_steps:
             raise SystemExit(f"no checkpoints found in {args.backbone_dir}/out.txt")
         ckpt = top_steps[0]
@@ -86,6 +105,7 @@ def main():
     flag = args.flag or f"ckpt{ckpt}"
 
     manifest_cfg = {
+        "dataset": args.dataset,
         "backbone_dir": args.backbone_dir,
         "ckpt": ckpt,
         "train_envs": args.train_envs,
@@ -120,6 +140,7 @@ def main():
                 checkpointManager=manager,
                 train_envs=args.train_envs,
                 w=args.w,
+                dataset=args.dataset,
             )
             sae_manager.configure_training(learning_rate=args.learning_rate)
             print(f"[sae] nb_concepts={args.nb_concepts} topk={args.topk} feature_dim={args.feature_dim}")
@@ -130,7 +151,7 @@ def main():
                 epochs=args.epochs,
                 batch_size=args.batch_size,
                 save_dir=str(save_dir),
-                dataset="PACS",
+                dataset=args.dataset,
             )
 
         test_envs_str = "".join(str(e) for e in manager.testenvs)

@@ -8,10 +8,40 @@ from torch.utils.data import Dataset, DataLoader, random_split
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 		
 pacs_domains = {
-    0: "art_painting", 
+    0: "art_painting",
     1: "cartoon",
     2: "photo",
     3: "sketch"
+}
+
+# Domain index -> folder name, in the same alphabetical-scan order DomainBed's
+# MultipleEnvironmentImageFolder uses (domainbed/datasets.py VLCS/OfficeHome
+# ENVIRONMENTS), so env indices in backbone directory names ("..._T3") line up
+# with these dicts exactly as they do for PACS.
+vlcs_domains = {
+    0: "Caltech101",
+    1: "LabelMe",
+    2: "SUN09",
+    3: "VOC2007",
+}
+
+officehome_domains = {
+    0: "Art",
+    1: "Clipart",
+    2: "Product",
+    3: "Real World",
+}
+
+DATASET_DOMAINS = {
+    "PACS": pacs_domains,
+    "VLCS": vlcs_domains,
+    "OfficeHome": officehome_domains,
+}
+
+DATASET_ROOTS = {
+    "PACS": r"C:\Users\sproj_ha\Desktop\SGen_Vision_Interp\Vision_Interp\domainbed\data\PACS",
+    "VLCS": r"C:\Users\sproj_ha\Desktop\SGen_Vision_Interp\Vision_Interp\domainbed\data\VLCS",
+    "OfficeHome": r"C:\Users\sproj_ha\Desktop\SGen_Vision_Interp\Vision_Interp\domainbed\data\office_home",
 }
 
 # TEST TO TRAIN ENVS
@@ -223,6 +253,107 @@ def Load_PACS(
 			num_workers=num_workers,
 			pin_memory=pin_memory,
 		)
+
+	return train_loader, test_loader
+
+
+def Load_Dataset_full(
+	dataset: str = "PACS",
+	domains: Optional[List[str]] = None,
+	batch_size: int = 64,
+	root_dir: Optional[str] = None,
+	num_workers: int = 0,
+	preload_to_gpu: bool = False,
+):
+	"""Generalisation of Load_PACS_full to any dataset in DATASET_DOMAINS
+	(currently PACS, VLCS, OfficeHome). VLCS and OfficeHome share PACS's
+	domain/class/*.jpg layout, so PACSDataset is reused unchanged.
+
+	Deterministic: no split, no shuffle, no drop_last. Left as a separate
+	function (rather than folding into Load_PACS_full) so the PACS path used
+	for every existing score file is untouched.
+	"""
+	if root_dir is None:
+		root_dir = DATASET_ROOTS[dataset]
+	if domains is None:
+		domains = list(DATASET_DOMAINS[dataset].values())
+
+	pacs_dataset = PACSDataset(
+		root_dir=root_dir,
+		domains=domains,
+		transform=PACS_TRANSFORM,
+		preload_to_gpu=preload_to_gpu,
+	)
+
+	return DataLoader(
+		pacs_dataset,
+		batch_size=batch_size,
+		shuffle=False,
+		drop_last=False,
+		num_workers=0 if preload_to_gpu else num_workers,
+		pin_memory=not preload_to_gpu,
+	)
+
+
+def Load_Dataset(
+	dataset: str = "PACS",
+	domains: Optional[List[str]] = None,
+	root_dir: Optional[str] = None,
+	batch_size: int = 64,
+	train_split: float = 0.8,
+	seed: int = 42,
+	shuffle_train: bool = True,
+	drop_last: bool = True,
+	preload_to_gpu: bool = False,
+	num_workers: int = 0,
+):
+	"""Generalisation of Load_PACS to any dataset in DATASET_DOMAINS (currently
+	PACS, VLCS, OfficeHome). Same 80/20 shuffled-split semantics as Load_PACS —
+	this is the SAE-training loader, never the eval loader. Kept separate from
+	Load_PACS so the existing PACS training path is untouched.
+	"""
+	if train_split <= 0.0 or train_split >= 1.0:
+		raise ValueError("train_split must be in (0, 1)")
+
+	if root_dir is None:
+		root_dir = DATASET_ROOTS[dataset]
+	if domains is None:
+		domains = list(DATASET_DOMAINS[dataset].values())
+
+	device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+	pacs_dataset = PACSDataset(
+		root_dir=root_dir,
+		domains=domains,
+		transform=PACS_TRANSFORM,
+		preload_to_gpu=preload_to_gpu,
+	)
+
+	train_size = int(train_split * len(pacs_dataset))
+	test_size = len(pacs_dataset) - train_size
+
+	g = torch.Generator().manual_seed(seed)
+	train_dataset, test_dataset = random_split(pacs_dataset, [train_size, test_size], generator=g)
+
+	num_workers_eff = 0 if preload_to_gpu else num_workers
+	pin_memory = not preload_to_gpu
+
+	train_loader = DataLoader(
+		train_dataset,
+		batch_size=batch_size,
+		shuffle=shuffle_train,
+		drop_last=drop_last,
+		num_workers=num_workers_eff,
+		pin_memory=pin_memory,
+	)
+	test_loader = DataLoader(
+		test_dataset,
+		batch_size=batch_size,
+		shuffle=False,
+		drop_last=drop_last,
+		num_workers=num_workers_eff,
+		pin_memory=pin_memory,
+	)
 
 	return train_loader, test_loader
 

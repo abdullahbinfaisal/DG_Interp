@@ -30,8 +30,8 @@ from typing import Any, Dict, Tuple
 class PACSConfig:
     """PACS layout and the source/target split."""
 
-    root: str = r"C:\Users\sproj_ha\Desktop\DomainBed\domainbed\data\PACS"
-
+    root: str = r"C:\Users\sproj_ha\Desktop\SGen_Vision_Interp\Vision_Interp\domainbed\data\PACS"
+    
     # Index order matters: it is the DomainBed env numbering used throughout.
     domains: Tuple[str, ...] = ("art_painting", "cartoon", "photo", "sketch")
 
@@ -161,8 +161,36 @@ ERM_RESNET_3300 = RunConfig(
     ckpt=3300,
 )
 
+#: W1 falsifier (docs/ABLATIONS_AND_EXPERIMENTS.md T3.1): does an explicit
+#: alignment objective actually reduce harmful-invariant concepts, or is that
+#: only a prediction? Checkpoint is the non-oracle top-1 over source envs
+#: (0,1,2), same selection protocol as ERM_RESNET_3300. SAE is a standalone
+#: single-checkpoint SAE (not tied to ERM's dictionary) trained with
+#: Normalizer(domains=[0,1,2]), so unlike the original ERM SAE it has no
+#: sketch leak in its normalization statistics.
+MMD_RESNET_1800 = RunConfig(
+    name="MMD_ResNet_1800_T3",
+    backbone_dir="./PACS_ResNet_Sketch_Test_Only/MMD_ResNet_T3",
+    ckpt=1800,
+    sae=SAEConfig(checkpoint_path="./SAEs/MMD_ResNet_T3/USAE_ckpt1800_MMD_ResNet_T3.pt"),
+)
+
+#: Second W1 backbone. SAE training previously crashed here (DANN algorithm
+#: objects don't expose `.network` the way ERM/MMD do); ckpt/checkpoint_path
+#: below assume a retrain with the same recipe as MMD_RESNET_1800 targeting
+#: the non-oracle top-1 checkpoint (step 5000). Verify both fields once the
+#: retrained SAE actually exists on disk.
+DANN_RESNET_5000 = RunConfig(
+    name="DANN_ResNet_5000_T3",
+    backbone_dir="./PACS_ResNet_Sketch_Test_Only/DANN_ResNet_T3",
+    ckpt=5000,
+    sae=SAEConfig(checkpoint_path="./SAEs/DANN_ResNet_T3/USAE_ckpt5000_DANN_ResNet_T3.pt"),
+)
+
 PRESETS: Dict[str, RunConfig] = {
     "erm_resnet_3300": ERM_RESNET_3300,
+    "mmd_resnet_1800": MMD_RESNET_1800,
+    "dann_resnet_5000": DANN_RESNET_5000,
 }
 
 

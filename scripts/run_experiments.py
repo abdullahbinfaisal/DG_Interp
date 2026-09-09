@@ -15,6 +15,9 @@ Group B: masked-accuracy experiments.
   # B4  inert-pair denoising control                (1 config,  ~1 min)
   & $PYEXE scripts\run_experiments.py --stage B4
 
+  # E3E4  D7: does R carry info beyond D's magnitude? (6 configs, ~3 min)
+  & $PYEXE scripts\run_experiments.py --stage E3E4
+
 Each configuration writes results/E_<id>.json (schema in docs/EXPERIMENTS.md
 section 10) and appends a row to results/summary.csv. Stages are independent and
 resumable, which matters because this machine crashes under load: if B3 dies at
@@ -42,6 +45,7 @@ from clean_lib.config import get_preset, PRESETS
 from clean_lib.eval import MaskedAccuracyEvaluator
 from clean_lib.masks import (
     build_buckets,
+    distribution_matched_subset,
     keep_only_random_control,
     load_scores,
     stratified_random_control,
@@ -81,7 +85,7 @@ def parse_args():
     p = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    p.add_argument("--stage", required=True, choices=["B1", "B2", "B3", "B4", "B5"])
+    p.add_argument("--stage", required=True, choices=["B1", "B2", "B3", "B4", "B5", "E3E4"])
     p.add_argument("--preset", default="erm_resnet_3300", choices=sorted(PRESETS))
     p.add_argument("--scores", default="processed/FINAL_ERM_ResNet_3300_T3.json")
     p.add_argument("--out-dir", default="results")
@@ -260,7 +264,7 @@ def main():
 
         scores = None
         buckets = None
-        if args.stage in ("B2", "B3", "B4", "B5"):
+        if args.stage in ("B2", "B3", "B4", "B5", "E3E4"):
             with rec.step("load_scores"):
                 scores = load_scores(args.scores,
                                      class_names=list(cfg.pacs.class_names))
@@ -414,6 +418,38 @@ def main():
                         "label used to build the mask",
                         seed=seed,
                     )
+
+        # ---------------- E3E4 ----------------
+        # D7 (docs/DIRECTIONS.md): does R carry information beyond the sign and
+        # magnitude of D? For each side, compare masking the named bucket
+        # (already covered by B2/B3) against masking a size- and
+        # |D|-distribution-matched subset drawn from its opposite-R
+        # counterpart. If the matched subset behaves the same as the named
+        # bucket, R adds nothing beyond magnitude; if it doesn't, R is doing
+        # independent causal work. Direction per class differs by side: harm is
+        # enriched at low R, so E3 matches S-_hi's profile out of the larger
+        # S-_lo pool; S+_lo's mass is below S+_hi's in every class, so E4 runs
+        # the other way, matching S+_lo's profile out of the larger S+_hi pool.
+        elif args.stage == "E3E4":
+            comparisons = [
+                ("harmful", buckets["S-_hi"], buckets["S-_lo"]),
+                ("supportive", buckets["S+_lo"], buckets["S+_hi"]),
+            ]
+            for label, target, pool in comparisons:
+                if target.n_pairs == 0 or pool.n_pairs == 0:
+                    print(f"[skip] E3E4 {label}: empty target or pool "
+                          f"(target={target.n_pairs}, pool={pool.n_pairs})")
+                    continue
+                for seed in args.control_seeds:
+                    matched = distribution_matched_subset(
+                        target, pool, scores, seed=seed)
+                    with rec.step(f"E3E4:{label}:s{seed}"):
+                        run_bucket(
+                            matched, f"E3E4_matched_{label}_seed{seed}", "E3E4",
+                            f"size- and |D|-distribution-matched subset of "
+                            f"{pool.name} to {target.name}'s profile (D7)",
+                            seed=seed,
+                        )
 
         rec.add(stage=args.stage, smoke=bool(args.limit_batches))
 
