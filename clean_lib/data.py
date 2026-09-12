@@ -1,6 +1,6 @@
 import os
 import torch
-from PIL import Image
+from PIL import Image, ImageFile
 from torchvision import transforms
 from typing import List, Optional, Tuple
 from torch.utils.data import Dataset, DataLoader, random_split
@@ -59,6 +59,67 @@ pacs_envs = {
 } 
 
 
+def _load_rgb(img_path: str) -> Tuple[Image.Image, bool]:
+	"""Open an image as RGB, returning (image, was_truncated).
+
+	Several VLCS JPEGs are truncated upstream and PIL refuses them by default.
+	We decode strictly first so truncation stays *detectable*, then retry with
+	LOAD_TRUNCATED_IMAGES - rather than setting that flag globally, which would
+	also silently swallow genuinely unreadable files. Only the bad files pay the
+	second decode.
+	"""
+	try:
+		return Image.open(img_path).convert("RGB"), False
+	except OSError:
+		ImageFile.LOAD_TRUNCATED_IMAGES = True
+		try:
+			return Image.open(img_path).convert("RGB"), True
+		finally:
+			ImageFile.LOAD_TRUNCATED_IMAGES = False
+
+
+def subset_paths(loader) -> List[str]:
+	"""Image paths behind a loader, unwrapping the Subset that random_split returns."""
+	base = loader.dataset
+	indices = list(range(len(base)))
+	while hasattr(base, "indices") and hasattr(base, "dataset"):
+		indices = [base.indices[i] for i in indices]
+		base = base.dataset
+	if not hasattr(base, "samples"):  # preload_to_gpu keeps tensors, not paths
+		return []
+	return [base.samples[i][0] for i in indices]
+
+
+def _has_end_marker(path: str) -> bool:
+	"""Whether an image file still carries its format's end-of-data marker."""
+	try:
+		size = os.path.getsize(path)
+	except OSError:
+		return False
+	if size < 4:
+		return False
+	with open(path, "rb") as f:
+		f.seek(max(0, size - 32))
+		tail = f.read()
+	lower = path.lower()
+	if lower.endswith((".jpg", ".jpeg")):
+		return b"\xff\xd9" in tail
+	if lower.endswith(".png"):
+		return b"IEND" in tail
+	return True
+
+
+def truncated_report(loader) -> Tuple[int, int]:
+	"""(truncated images in this loader's subset, total images in it).
+
+	Inspects each file's end-of-data marker rather than counting what _load_rgb
+	caught while decoding: with num_workers > 0 the decode happens in worker
+	processes, whose truncated_paths never make it back to the parent.
+	"""
+	paths = subset_paths(loader)
+	return sum(1 for p in paths if not _has_end_marker(p)), len(paths)
+
+
 class PACSDataset(Dataset):
 	def __init__(
 		self,
@@ -95,13 +156,16 @@ class PACSDataset(Dataset):
 		classes = sorted(classes)
 		class_to_idx = {name: idx for idx, name in enumerate(classes)}
 
+		self.truncated_paths = set()
 		self.preloaded = preload_to_gpu and torch.cuda.is_available()
 
 		if self.preloaded:
 			data_tensors = []
 			labels = []
 			for img_path, class_name in samples_info:
-				image = Image.open(img_path).convert("RGB")
+				image, truncated = _load_rgb(img_path)
+				if truncated:
+					self.truncated_paths.add(img_path)
 				if self.transform is not None:
 					tensor = self.transform(image)
 				else:
@@ -124,7 +188,9 @@ class PACSDataset(Dataset):
 			return self.data[idx], self.labels[idx]
 
 		img_path, label = self.samples[idx]
-		image = Image.open(img_path).convert("RGB")
+		image, truncated = _load_rgb(img_path)
+		if truncated:
+			self.truncated_paths.add(img_path)
 		if self.transform is not None:
 			tensor = self.transform(image)
 		else:

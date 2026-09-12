@@ -63,6 +63,15 @@ def parse_args():
     p.add_argument("--learning-rate", type=float, default=3e-4)
     p.add_argument("--epochs", type=int, default=250)
     p.add_argument("--batch-size", type=int, default=64)
+    p.add_argument("--num-workers", type=int, default=0,
+                    help="DataLoader workers for the one caching pass over the images. "
+                         "0 decodes single-threaded; raise it on datasets with large "
+                         "source images (VLCS/LabelMe averages ~1 MB each).")
+    p.add_argument("--cache-dir", default=".feature_cache",
+                    help="where the cached backbone activations are written; deleted on "
+                         "completion unless --keep-cache")
+    p.add_argument("--keep-cache", action="store_true",
+                    help="keep the cached activations, so a rerun skips the caching pass")
     p.add_argument("--flag", default=None,
                     help="save-file prefix; defaults to 'ckpt<step>'. "
                          "Final name is SAEs/USAE_<flag>_<algo>_<arch>_T<testenvs>.pt")
@@ -120,6 +129,9 @@ def main():
         "flag": flag,
         "save_dir": str(save_dir),
         "seed": args.seed,
+        "num_workers": args.num_workers,
+        "cache_dir": args.cache_dir,
+        "keep_cache": args.keep_cache,
     }
 
     with RunRecorder("train_sae", config=manifest_cfg, notes=args.notes) as rec:
@@ -142,7 +154,8 @@ def main():
                 w=args.w,
                 dataset=args.dataset,
             )
-            sae_manager.configure_training(learning_rate=args.learning_rate)
+            sae_manager.configure_training(learning_rate=args.learning_rate,
+                                           num_workers=args.num_workers)
             print(f"[sae] nb_concepts={args.nb_concepts} topk={args.topk} feature_dim={args.feature_dim}")
 
         with rec.step("train"):
@@ -152,6 +165,9 @@ def main():
                 batch_size=args.batch_size,
                 save_dir=str(save_dir),
                 dataset=args.dataset,
+                num_workers=args.num_workers,
+                cache_dir=args.cache_dir,
+                keep_cache=args.keep_cache,
             )
 
         test_envs_str = "".join(str(e) for e in manager.testenvs)
